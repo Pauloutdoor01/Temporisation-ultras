@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tempo Ultra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="lib/leaflet.css">
+<script src="lib/leaflet.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jspdf.plugin.autotable.min.js"></script>
+<script>window.TEMPO_MODE = window.tempo ? "app" : "viewer";</script>
+<style>
+/* Mise en page : bandeau de direction de course, colonne de réglages à gauche, profil + tableau de passage à droite */
+:root {
+  --bg: #f1f4f1; --surface: #ffffff; --ink: #17201d; --muted: #5a6762; --line: #d6ddd8; --soft: #e8ede9;
+  --accent: #e1502a; --accent-ink: #ffffff;
+  --lead: #1d6c88; --fem: #a8336a; --last: #946510; --night: rgba(23, 32, 29, .07);
+  --c1: #1d6c88; --c2: #d2561f; --c3: #3c8a3f; --c4: #8a4bb0; --c5: #b8890b; --c6: #c2347a;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111614; --surface: #19201d; --ink: #e5ebe8; --muted: #97a59f; --line: #2c3632; --soft: #212a26;
+  --accent: #ff7349; --accent-ink: #1a0d08; --lead: #5fb4d3; --fem: #e27aa9; --last: #d8a54a; --night: rgba(255,255,255,.05); --c1: #5fb4d3; --c2: #f08a52; --c3: #79c47b; --c4: #b98ce0; --c5: #e3bb4a; --c6: #ec79ad; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111614; --surface: #19201d; --ink: #e5ebe8; --muted: #97a59f; --line: #2c3632; --soft: #212a26;
+  --accent: #ff7349; --accent-ink: #1a0d08; --lead: #5fb4d3; --fem: #e27aa9; --last: #d8a54a; --night: rgba(255,255,255,.05); --c1: #5fb4d3; --c2: #f08a52; --c3: #79c47b; --c4: #b98ce0; --c5: #e3bb4a; --c6: #ec79ad; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); }
+* { box-sizing: border-box }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1500px; margin: 0 auto }
+header.top { border-bottom: 3px solid var(--accent); background: var(--surface) }
+header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 14px }
+.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap }
+.brand h1 { font: 700 30px/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; margin: 0 }
+.brand h1 span { color: var(--accent) }
+.brand p { margin: 0; color: var(--muted); font-size: 13px }
+.actions { display: flex; gap: 8px; flex-wrap: wrap }
+button, .btn { font: 600 13px/1 var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 13px; border-radius: 6px; cursor: pointer }
+button:hover { border-color: var(--ink) }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) }
+button.ghost { background: transparent }
+button:disabled { opacity: .5; cursor: default }
+main.wrap { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; padding-block: 20px 40px; align-items: start }
+@media (max-width: 1000px) { main.wrap { grid-template-columns: minmax(0, 1fr) } }
+aside { display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.panel h2 { font: 700 15px/1 var(--f-display); letter-spacing: .08em; text-transform: uppercase; margin: 0; color: var(--muted) }
+.field { display: flex; flex-direction: column; gap: 4px }
+.field label { font-size: 12px; font-weight: 600; color: var(--muted) }
+.row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px }
+.row2 { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 10px }
+input, select, textarea { font: 14px var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 8px; width: 100%; min-width: 0 }
+textarea { font: 12px/1.45 var(--f-mono); resize: vertical; min-height: 80px }
+.idx { display: flex; align-items: center; gap: 10px }
+.idx input[type=number] { font: 700 30px/1 var(--f-display); width: 96px; text-align: center; padding: 4px; color: var(--lead) }
+.idx input[type=range] { flex: 1; padding: 0; accent-color: var(--lead); background: none; border: 0 }
+.idx.f input[type=number] { color: var(--fem); font-size: 22px }
+.hint { font-size: 12px; color: var(--muted); margin: 0 }
+.drop { border: 1.5px dashed var(--line); border-radius: 6px; padding: 14px; text-align: center; cursor: pointer; color: var(--muted); font-size: 13px }
+.drop.over, .drop:hover { border-color: var(--accent); color: var(--ink) }
+.drop strong { color: var(--ink) }
+.pts { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow: auto }
+.pt { display: grid; grid-template-columns: 74px minmax(0, 1fr) 26px; gap: 5px; align-items: center; padding-bottom: 6px; border-bottom: 1px solid var(--soft) }
+.pt input:first-child { grid-column: 1 / 3 }
+.pt input, .pt select { padding: 5px 6px; font-size: 13px }
+.pt input.km { font-family: var(--f-mono); font-size: 12px }
+.pt button { padding: 4px; font-size: 14px; line-height: 1; border: 0; background: none; color: var(--muted) }
+.pt button:hover { color: var(--accent) }
+.inline { display: flex; gap: 8px; flex-wrap: wrap }
+.msg { font-size: 12.5px; padding: 8px 10px; border-radius: 5px; background: var(--soft); margin: 0 }
+.msg.err { color: var(--accent); font-weight: 600 }
+.content { display: flex; flex-direction: column; gap: 16px; min-width: 0 }
+.racehead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px }
+.racehead h2 { font: 700 34px/1 var(--f-display); text-transform: uppercase; margin: 0; letter-spacing: .01em; text-wrap: balance }
+.sample { font: 600 11px var(--f-body); letter-spacing: .08em; text-transform: uppercase; background: var(--soft); color: var(--muted); padding: 4px 8px; border-radius: 4px }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden }
+.stat { background: var(--surface); padding: 10px 12px }
+.stat b { display: block; font: 700 24px/1.1 var(--f-display); font-variant-numeric: tabular-nums }
+.stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600 }
+.stat.lead b { color: var(--lead) } .stat.fem b { color: var(--fem) } .stat.last b { color: var(--last) }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px }
+.chart canvas { width: 100%; height: 270px; display: block; cursor: crosshair }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); padding: 4px 4px 0 }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 5px }
+.tablebox { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 900px }
+th, td { padding: 7px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line) }
+th { font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--soft) }
+th.grp { text-align: center; border-bottom: 2px solid currentColor }
+th.g-lead { color: var(--lead) } th.g-fem { color: var(--fem) } th.g-last { color: var(--last) } th.g-bh { color: var(--accent) }
+td.l, th.l { text-align: left }
+td.name { font-weight: 600; white-space: normal; min-width: 150px }
+td.num { font-family: var(--f-mono); font-size: 12px }
+td.lead { color: var(--lead); font-weight: 600 } td.fem { color: var(--fem); font-weight: 600 } td.last { color: var(--last); font-weight: 600 } td.bh { color: var(--accent); font-weight: 600 }
+.stat small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums }
+td.bhcell { padding: 4px 6px }
+.bhin { width: 96px; font: 600 12.5px var(--f-mono); color: var(--accent); text-align: right; padding: 4px 6px; background: var(--surface) }
+.bhin::placeholder { color: var(--muted); opacity: .5; font-weight: 400 }
+.bhin.bad { border-color: var(--accent); background: var(--soft) }
+.bhin.early { border-style: dashed }
+td.last.bind { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px }
+td small { display: block; font: 11px var(--f-mono); color: var(--muted); font-weight: 400 }
+tr.end td { border-bottom: 0; background: var(--soft) }
+.tag { white-space: nowrap; display: inline-block; font: 600 10.5px var(--f-body); text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-radius: 3px; background: var(--soft); color: var(--muted) }
+.tag.base { background: var(--accent); color: var(--accent-ink) }
+.tag.complet { border: 1px solid var(--accent); color: var(--accent); background: none }
+details.method { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 13px }
+details.method summary { cursor: pointer; font-weight: 600 }
+details.method p, details.method li { max-width: 75ch; color: var(--muted) }
+.toast { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 6px; font-size: 13px; max-width: 340px }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px }
+.check input { width: auto }
+@media (prefers-reduced-motion: no-preference) { button { transition: border-color .15s } }
+[hidden] { display: none !important }
+body.viewer .edit-only { display: none !important }
+body.viewer .bhin { border-color: transparent; background: transparent; pointer-events: none }
+body.viewer .chart canvas { cursor: default }
+body.viewer main.wrap { grid-template-columns: minmax(0, 1fr) }
+.robadge { font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: .08em; padding: 6px 9px; border-radius: 4px; background: var(--soft); color: var(--muted); align-self: center }
+.view { padding-block: 20px 40px; display: flex; flex-direction: column; gap: 14px }
+.vhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px }
+.vhead > div:first-child { max-width: 80ch }
+.setgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; align-items: start }
+.setrow { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--soft) }
+.setrow label { font-size: 13px; font-weight: 600 }
+.setrow label small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; line-height: 1.35 }
+.setrow input { font: 13px var(--f-mono); text-align: right; padding: 5px 6px }
+.setrow input.chg { border-color: var(--accent) }
+.calgrid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start }
+@media (max-width: 1100px) { .calgrid { grid-template-columns: minmax(0, 1fr) } }
+table.caltbl { min-width: 760px }
+table.caltbl td { white-space: nowrap }
+table.caltbl td.l { white-space: normal }
+table.caltbl .good { color: #3c8a3f; font-weight: 600 } table.caltbl .bad { color: var(--accent); font-weight: 600 }
+table.caltbl tr.off td { opacity: .45 }
+.dlg { position: fixed; inset: 0; background: rgba(10, 14, 12, .45); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 2000; overflow: auto }
+.dlgbox { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 18px; width: min(620px, 100%); display: flex; flex-direction: column; gap: 12px }
+.inline.end { justify-content: flex-end }
+.inline.nowrap { flex-wrap: nowrap }
+#fxMap { width: 100%; height: 620px; border-radius: 6px; background: var(--soft) }
+@media (max-width: 640px) { #fxMap { height: 420px } }
+#fxMap.night .leaflet-tile-pane { filter: brightness(.55) saturate(.8) }
+.leaflet-container { font: 12px var(--f-body) }
+.leaflet-control-layers input { width: auto; display: inline-block; margin: 0 6px 0 0; padding: 0 }
+.leaflet-control-layers label { display: flex; align-items: center; font-size: 12.5px; padding: 2px 0 }
+.leaflet-control-layers-base label span { display: inline-flex; align-items: center }
+.calgrid:has(> #calForm[hidden]) { grid-template-columns: minmax(0, 1fr) }
+table.caltbl td.l { min-width: 230px }
+.fxlbl { background: transparent; border: 0; box-shadow: none; font: 600 11px var(--f-body); color: #17201d; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff; padding: 0 }
+.fxlbl::before { display: none }
+.fxtag { font: 700 11.5px var(--f-body); border-radius: 4px; padding: 2px 6px; border: 0; color: #fff }
+.fxtag::before { display: none }
+.fxfmts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.fxfmts .lbl { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 2px }
+.fxchip { display: inline-flex; align-items: center; gap: 7px; font: 700 14px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; border: 1px solid var(--line); border-left: 5px solid var(--fc); border-radius: 6px; padding: 7px 10px; background: var(--surface); cursor: pointer; user-select: none }
+.fxchip input { width: auto; margin: 0; accent-color: var(--fc) }
+.fxchip.off { opacity: .5; border-left-color: var(--line) }
+.fxpt { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #17201d; background: #fff; box-sizing: border-box }
+.fxpt.base { background: #e1502a }
+.fxpt.drag { width: 18px; height: 18px; border-width: 3px; border-color: #e1502a; cursor: grab; box-shadow: 0 0 0 3px rgba(255,255,255,.8) }
+button.assist { border-color: var(--lead); color: var(--lead) }
+button.assist.primary { background: var(--lead); color: #fff }
+.assistgrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start }
+.assistgrid > .panel:first-child { grid-row: span 2 }
+@media (max-width: 1000px) { .assistgrid { grid-template-columns: minmax(0, 1fr) } }
+.aiout { background: var(--soft); border-radius: 6px; padding: 10px 12px; font-size: 13.5px; white-space: pre-wrap }
+.aiout.err { color: var(--accent); font-weight: 600 }
+.aihist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow: auto }
+.aihist li { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); font-size: 12.5px; display: flex; flex-direction: column; gap: 3px }
+.aihist li b { font-size: 13px }
+.aihist li span { color: var(--muted) }
+#fxMap.moving { outline: 3px solid var(--accent); outline-offset: -3px }
+#flux { padding-block: 20px 40px; display: flex; flex-direction: column; gap: 14px }
+#fxBody { display: flex; flex-direction: column; gap: 14px }
+.fxhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px }
+.fxhead > div:first-child { max-width: 80ch }
+.fxtitle { font: 700 30px/1.05 var(--f-display); text-transform: uppercase; margin: 0 0 4px; text-wrap: balance }
+.fxclock { display: flex; align-items: baseline; gap: 10px }
+.fxclock b { font: 700 34px/1 var(--f-display); text-transform: capitalize; font-variant-numeric: tabular-nums }
+.fxday { font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: .08em; padding: 3px 8px; border-radius: 4px; background: var(--soft); color: var(--muted) }
+.fxday.night { background: var(--ink); color: var(--bg) }
+.fxctrl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px }
+.fxctrl input[type=range] { flex: 1 1 260px; min-width: 160px; padding: 0; accent-color: var(--accent); background: none; border: 0 }
+.fxsel { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted) }
+.fxsel select { width: auto }
+.fxgrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start }
+@media (max-width: 1000px) { .fxgrid { grid-template-columns: minmax(0, 1fr) } }
+
+#fxBands { width: 100%; display: block }
+.fxlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px }
+.fxlist li { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--fc); border-radius: 6px; padding: 9px 11px; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px }
+.fxlist b { font: 700 16px/1.1 var(--f-display); text-transform: uppercase; color: var(--fc) }
+.fxlist i { font-style: normal; font-weight: 600; color: var(--muted); display: inline-block; min-width: 108px }
+.fxlist .done { color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 2px solid var(--line); padding-bottom: 0 }
+.tab { font: 700 16px/1 var(--f-display); letter-spacing: .03em; text-transform: uppercase; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--soft); color: var(--muted); padding: 9px 14px 8px; margin-bottom: -2px; display: inline-flex; gap: 6px; align-items: baseline }
+.tab.on { background: var(--surface); color: var(--ink); border-color: var(--line); box-shadow: inset 0 3px 0 var(--accent); border-bottom: 2px solid var(--surface) }
+.tab small { font: 500 10px var(--f-body); text-transform: none; letter-spacing: 0; color: var(--accent) }
+.tab.add { background: transparent; border-style: dashed; color: var(--muted); font-size: 14px }
+.empty { background: var(--surface); border: 1.5px dashed var(--line); border-radius: 8px; padding: 28px 22px; display: flex; flex-direction: column; gap: 6px; max-width: 70ch }
+.empty b { font: 700 20px/1.1 var(--f-display); text-transform: uppercase; letter-spacing: .02em }
+.empty p { margin: 0; color: var(--muted) }
+#fmtView { display: flex; flex-direction: column; gap: 16px; min-width: 0 }
+.h2sub { color: var(--ink); letter-spacing: .04em }
+button.danger { border-color: var(--accent); color: var(--accent) }
+button.sm { font-size: 12px; padding: 6px 9px }
+details.arc { border-top: 1px solid var(--soft); padding-top: 8px; display: flex; flex-direction: column; gap: 8px }
+details.arc summary { cursor: pointer; font: 700 14px/1.2 var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--ink) }
+details.arc[open] summary { margin-bottom: 8px }
+details.arc .count { color: var(--accent) }
+.arc-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow: auto }
+.arc-item { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; background: var(--bg) }
+.arc-item.current { border-color: var(--lead); box-shadow: inset 3px 0 0 var(--lead) }
+.arc-item strong { overflow-wrap: anywhere; font-size: 13px }
+.arc-meta { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere }
+.arc-act { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px }
+.arc-empty { font-size: 12.5px; color: var(--muted) }
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="brand"><h1>Tempo<span>Ultra</span></h1><p id="brandSub">Tableau de temporisation calé sur la cote UTMB et les résultats de courses</p></div>
+  <div class="actions">
+    <span id="roBadge" class="robadge" hidden>Lecture seule</span>
+    <button id="bFlux" class="primary" type="button">Flux de course</button>
+    <button id="bPdf" type="button">Exporter en PDF</button>
+    <button id="bDocx" type="button">Exporter en Word</button>
+    <button id="bShare" class="edit-only" type="button">Partager</button>
+    <button id="bCal" class="edit-only" type="button">Résultats et calage</button>
+    <button id="bSet" class="edit-only" type="button">Réglages</button>
+    <button id="bAssist" class="edit-only assist" type="button">Assistant Claude</button>
+  </div>
+</div></header>
+
+<main class="wrap" id="vTable">
+  <aside class="edit-only">
+    <section class="panel">
+      <h2>Événement</h2>
+      <div class="field"><label for="evName">Nom de l'événement</label><input id="evName" type="text" placeholder="ex. Grand Raid Kiprun 3 Vallées Moûtiers - 2027"></div>
+      <div class="inline"><button type="button" class="ghost" id="newEvent">Nouvel événement</button><button type="button" class="ghost" id="arcSave">Enregistrer dans les archives</button></div>
+      <details class="arc" id="arcBox">
+        <summary>Archives <span id="arcCount" class="count"></span></summary>
+        <p class="hint">Chaque export PDF range ici l'événement complet : tous les formats, leurs traces, points, cotes et barrières. Rouvre-le pour modifier et ressortir un PDF : l'archive suit tes changements. Les archives sont rangées dans le dossier Tempo Ultra de tes Documents.</p>
+        <div class="field"><label for="arcQ">Rechercher</label><input id="arcQ" type="text" placeholder="Événement, format…"></div>
+        <ul class="arc-list" id="arcList"></ul>
+        <button type="button" class="ghost" id="arcImport">Importer des archives</button>
+        <input type="file" id="arcFile" accept=".json,application/json" hidden>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>Format <span id="fmtHead" class="h2sub"></span></h2>
+      <div class="row2">
+        <div class="field"><label for="fmtLabel">Nom du format</label><input id="fmtLabel" type="text" placeholder="ex. 100 km"></div>
+        <div class="field"><label for="tech">Technicité</label>
+          <select id="tech"><option value="roulant">Roulant</option><option value="standard" selected>Standard</option><option value="technique">Technique</option><option value="tres">Très technique</option></select></div>
+      </div>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Importer le fichier GPX de ce format"><strong>Déposer le GPX de ce format</strong><br>ou cliquer pour choisir le fichier</div>
+      <input type="file" id="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden>
+      <p class="msg" id="gpxMsg"></p>
+      <div class="field"><label for="start">Départ</label><input id="start" type="datetime-local"></div>
+      <div class="row3">
+        <div class="field"><label for="dist">Distance officielle</label><input id="dist" type="number" min="0" step="0.1" placeholder="km"></div>
+        <div class="field"><label for="dplus">D+ officiel</label><input id="dplus" type="number" min="0" step="10" placeholder="m"></div>
+        <div class="field"><label for="dminus">D- officiel</label><input id="dminus" type="number" min="0" step="10" placeholder="m"></div>
+      </div>
+      <p class="hint" id="calHint">Facultatif. La trace est recalée sur ces valeurs : les points saisis aux km officiels tombent au bon endroit, sur la carte comme sur le profil.</p>
+      <div class="field"><label for="fmtRunners">Coureurs au départ (pour le flux de course)</label><input id="fmtRunners" type="number" min="0" step="10" placeholder="ex. 400"></div>
+      <div class="inline"><button type="button" class="ghost" id="dupFmt">Dupliquer ce format</button><button type="button" class="ghost" id="delFmt">Supprimer ce format</button></div>
+    </section>
+
+    <section class="panel">
+      <h2>Niveau du plateau</h2>
+      <div class="field"><label for="idx">Cote UTMB du meilleur inscrit</label>
+        <div class="idx"><input id="idx" type="number" min="400" max="990" value="880"><input id="idxR" type="range" min="500" max="980" value="880" aria-label="Cote UTMB du meilleur inscrit"></div></div>
+      <div class="field"><label for="idxF">Cote UTMB de la meilleure inscrite (facultatif)</label>
+        <div class="idx f"><input id="idxF" type="number" min="400" max="990" placeholder="—"><input id="idxFR" type="range" min="500" max="980" value="760" aria-label="Cote UTMB de la meilleure inscrite"></div></div>
+      <p class="hint">Le dernier coureur ne dépend pas de ces cotes : il suit le profil d'un finisher de fin de classement sur ce type de parcours.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Points de passage</h2>
+      <p class="hint">Clique sur le profil pour ajouter un point à cet endroit.</p>
+      <div class="pts" id="pts"></div>
+      <div class="inline"><button type="button" id="addPt">Ajouter un point</button><button type="button" class="ghost" id="clearPts">Tout effacer</button></div>
+      <div class="field"><label for="paste">Coller une liste (« Nom ; km » ou juste « Nom » si le GPX contient ce point)</label>
+        <textarea id="paste" placeholder="Col du Loup ; 12.4&#10;Refuge des Aiguilles ; 21&#10;Base vie Saint-Hugon"></textarea></div>
+      <button type="button" id="applyPaste">Créer les points depuis la liste</button>
+      <p class="msg" id="pasteMsg" hidden></p>
+    </section>
+  </aside>
+
+  <section class="content">
+    <div class="racehead"><h2 id="title">—</h2></div>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Formats de l'événement"></div>
+    <div id="emptyFmt" class="empty" hidden>
+      <b>Pas encore de trace pour ce format</b>
+      <p>Dépose son fichier GPX dans le panneau « Format » à gauche. Les points, la cote et les barrières que tu saisis restent attachés à ce format.</p>
+    </div>
+    <div id="fmtView">
+    <div class="stats" id="stats"></div>
+    <div class="chart">
+      <canvas id="prof" aria-label="Profil altimétrique avec points de passage"></canvas>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Points de passage</span><span><i style="background:var(--night)"></i>Nuit pour le dernier coureur</span></div>
+    </div>
+    <div class="tablebox"><table id="tbl"></table></div>
+    <p class="hint">Saisis tes barrières horaires dans la colonne BH, au même format que les heures du tableau (« ven. 21:15 », ou « 21:15 » si la course tient sur une journée). Quand le dernier coureur modélisé arrive après une barrière, le tableau repart d'un coureur qui passe pile à la barrière et le fait continuer à l'allure du dernier jusqu'à l'arrivée ; son heure est alors soulignée.</p>
+    </div>
+    <p class="hint">Le PDF et le Word regroupent tous les formats qui ont une trace, dans l'ordre des onglets, chacun avec son profil et son tableau sur une nouvelle page.</p>
+    <details class="method">
+      <summary>Comment les temps sont calculés</summary>
+      <ul>
+        <li>La trace est rééchantillonnée tous les 25 m et l'altitude lissée pour retirer le bruit GPS. Le D+ officiel, s'il est saisi, recale tout le dénivelé.</li>
+        <li>Le temps total vient d'une loi ajustée sur environ 3 100 finishers relevés sur LiveTrail, avec leur cote UTMB et leur temps : UTMB, CCC, OCC, TDS et MCC 2026, UT4M 180 Xtrem, 100 Master et 40 Chartreuse 2026, SaintéLyon et SaintExpress 2025, Échappée Belle Traversée Nord 2025, Grand Trail et Endurance Trail des Templiers 2025, Odyssée de Caron 2026.</li>
+        <li>La loi tient compte de la distance, du D+ (100 m de montée valent environ 0,8 km), de la raideur moyenne du parcours et du point le plus haut (environ +16 % par 1 000 m au-dessus de 1 500 m). Sur ces 15 courses, l'écart moyen est de 5 % ; testée sur l'Ultra des 3 Vallées 2026, qu'elle n'avait pas vu, elle tombe à 4 % du temps réel.</li>
+        <li>Sur les parcours longs et roulants, l'usure liée aux kilomètres pèse davantage : au-delà de 90 km, le temps est allongé d'autant plus que le parcours a peu de D+ par km (aucun effet au-dessus de 50 m/km). Ce réglage vient de la Western Azuréenne 2026 (162 km et 4 800 m de D+, vainqueur cote 817 en 16h08, médiane des finishers 26h53). Sur un parcours roulant, seule la tête gagne un peu de temps : les derniers, eux, ne vont pas plus vite.</li>
+        <li>Plus le format est court, plus le peloton est hétérogène et plus le dernier finit loin de la tête : rien sur un 170 km de montagne, environ +25 % sur un 100 km, jusqu'à +80 % sur un 30 km. Calé sur la Western 2026 (100,8 km et 2 770 m de D+ : 6 finishers entre 22 et 24 h), le Derby des 3 Vallées 2026 (29 km et 1 550 m de D+ : 5 finishers entre 10 h et 11h30) et les classements complets du GRK 110 et de l'UT4M 180. La barrière d'arrivée que tu saisis borne toujours le dernier.</li>
+        <li>Sur les formats courts (moins d'environ 30 km-effort, soit un 10 ou un 15 km), les temps de la tête et du dernier sont rallongés progressivement, jusqu'à +33 % sur un 10 km roulant : sans ça, la loi calée sur les ultras donnerait des allures de route.</li>
+        <li>L'écart de temps entre deux cotes grandit avec la longueur de la course. Le vainqueur court en moyenne 8 % plus vite que le temps attendu pour sa cote, car c'est la meilleure journée du plateau.</li>
+        <li>Ce temps est réparti mètre par mètre selon la pente : 100 m de montée valent 1 km, les descentes roulantes font gagner du temps, les descentes raides en font perdre, davantage pour les coureurs lents.</li>
+        <li>La fatigue s'accumule avec l'effort déjà fourni : plus on avance, plus chaque km coûte cher, avec une pente plus forte pour le dernier coureur.</li>
+        <li>Ce temps est ensuite réparti le long de la trace : les sections en altitude et de nuit (crépuscule civil calculé pour la date et le lieu) prennent plus de temps que les autres, plus nettement pour le dernier coureur. Les arrêts aux ravitos sont décomptés selon le type de point.</li>
+        <li>Le dernier finisher vaut environ 2,5 fois le temps attendu d'une cote 945 sur 100 km-effort et 2,3 fois sur 280, comme sur les classements complets de l'UT4M 180, du GRK et les barrières de l'UTMB. Si tu saisis des barrières horaires, le dernier coureur est recalé sur chaque barrière qu'il aurait dépassée, puis repart à l'allure du dernier jusqu'à l'arrivée.</li>
+      </ul>
+    </details>
+  </section>
+</main>
+
+<section id="flux" class="wrap view" hidden>
+  <div class="fxhead">
+    <div><h2 id="fxTitle" class="fxtitle">Flux de course</h2>
+    <p class="hint">Tous les formats sur la même horloge : la tête (point plein), le dernier (point vide) et le gros du peloton (bande, du quart aux trois quarts des coureurs). Calculé avec les traces, cotes, points et barrières saisis dans chaque onglet.</p></div>
+    <div class="fxclock"><span id="fxNight" class="fxday">Jour</span><b id="fxClock">—</b></div>
+  </div>
+  <div id="fxEmpty" class="empty" hidden><b>Aucun format n'a de trace</b><p>Dépose au moins un GPX dans un onglet pour voir le flux de course.</p></div>
+  <div id="fxBody">
+    <div class="fxctrl">
+      <button type="button" id="fxPlay" class="primary">Lecture</button>
+      <button type="button" class="ghost sm" data-jump="start">Départ</button>
+      <button type="button" class="ghost sm" data-jump="-1">−1 h</button>
+      <button type="button" class="ghost sm" data-jump="+1">+1 h</button>
+      <input type="range" id="fxTime" aria-label="Heure de course">
+      <label class="fxsel" for="fxSpeed">Vitesse
+        <select id="fxSpeed"><option value="600">10 min / s</option><option value="1800" selected>30 min / s</option><option value="3600">1 h / s</option><option value="7200">2 h / s</option></select></label>
+      <label class="check"><input type="checkbox" id="fxNames" checked> Noms des points</label>
+      <button type="button" class="ghost sm" id="fxFit">Recentrer</button>
+      <label class="check edit-only" title="Glisse un point sur la carte pour corriger sa position : il se recale sur la trace et son km est mis à jour"><input type="checkbox" id="fxMove"> Déplacer les points</label>
+    </div>
+    <div class="fxfmts" id="fxFmts" aria-label="Formats affichés">
+    </div>
+    <div class="fxgrid">
+      <div class="chart fxmapbox"><div id="fxMap" aria-label="Carte des parcours avec la position des coureurs"></div></div>
+      <ul class="fxlist" id="fxList"></ul>
+    </div>
+    <div class="chart"><canvas id="fxBands" aria-label="Position des coureurs par format, en kilomètres"></canvas></div>
+  </div>
+</section>
+<section id="vSettings" class="wrap view" hidden>
+  <div class="vhead">
+    <div><h2 class="fxtitle">Réglages du modèle</h2>
+    <p class="hint">Tous les coefficients qui fabriquent les temps. Une modification s'applique à tous les événements dès que tu enregistres. Le recalage (page « Résultats et calage ») les ajuste tout seul à partir des courses que tu lui donnes.</p></div>
+    <div class="inline"><button type="button" class="ghost" id="setReset">Valeurs d'origine</button><button type="button" class="ghost" id="setCancel">Annuler</button><button type="button" class="primary" id="setSave">Enregistrer</button></div>
+  </div>
+  <div id="setForm" class="setgrid"></div>
+  <div class="panel">
+    <h2>Données et sauvegarde</h2>
+    <p class="hint" id="dataDirTxt">Tes événements, archives, traces et réglages sont rangés dans un dossier de ton Mac.</p>
+    <div class="inline"><button type="button" class="ghost" id="openDataDir">Ouvrir le dossier des données</button></div>
+  </div>
+</section>
+
+<section id="vCalib" class="wrap view" hidden>
+  <div class="vhead">
+    <div><h2 class="fxtitle">Résultats et calage</h2>
+    <p class="hint">La base de courses sur laquelle le modèle s'appuie. Ajoute les résultats de tes courses (classement LiveTrail avec les cotes, temps du vainqueur, temps du dernier) puis recale : tu vois l'effet course par course avant d'appliquer.</p></div>
+    <div class="inline"><button type="button" class="ghost" id="calNew">Ajouter une course</button><button type="button" class="primary" id="calFit">Recaler le modèle</button></div>
+  </div>
+  <div class="calgrid">
+    <div class="tablebox"><table id="calTbl" class="caltbl"></table></div>
+    <section class="panel" id="calForm" hidden>
+      <h2 id="calFormTitle">Nouvelle course</h2>
+      <div class="field"><label for="cfName">Nom</label><input id="cfName" type="text" placeholder="ex. Western Azuréenne 2027 - 100 km"></div>
+      <div class="row3">
+        <div class="field"><label for="cfKm">Distance (km)</label><input id="cfKm" type="number" step="0.1" min="1"></div>
+        <div class="field"><label for="cfDp">D+ (m)</label><input id="cfDp" type="number" step="10" min="0"></div>
+        <div class="field"><label for="cfAlt">Point haut (m)</label><input id="cfAlt" type="number" step="10" min="0"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="cfTech">Technicité</label><select id="cfTech"><option value="roulant">Roulant</option><option value="standard" selected>Standard</option><option value="technique">Technique</option><option value="tres">Très technique</option></select></div>
+        <div class="field"><label for="cfLast">Temps du dernier finisher</label><input id="cfLast" type="text" placeholder="ex. 23:55"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="cfWinIdx">Cote du vainqueur</label><input id="cfWinIdx" type="number" min="300" max="1000" placeholder="si pas de classement"></div>
+        <div class="field"><label for="cfWinT">Temps du vainqueur</label><input id="cfWinT" type="text" placeholder="ex. 16:07:52"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="cfFull"> Le classement collé est complet (jusqu'au dernier finisher)</label>
+      <div class="field"><label for="cfRes">Classement : une ligne par coureur, avec sa cote et son temps</label>
+        <textarea id="cfRes" rows="8" placeholder="812 ; 16:07:52&#10;798 ; 16:26:15&#10;… ou copie directe du tableau LiveTrail"></textarea></div>
+      <p class="hint" id="cfResInfo"></p>
+      <div class="field"><label for="cfSrc">Source, remarques</label><input id="cfSrc" type="text" placeholder="ex. LiveTrail, 82 finishers"></div>
+      <div class="inline"><button type="button" class="primary" id="cfSave">Enregistrer la course</button><button type="button" class="ghost" id="cfCancel">Annuler</button></div>
+    </section>
+  </div>
+  <section class="panel" id="calOut" hidden>
+    <h2>Résultat du recalage</h2>
+    <ul id="calReport" class="hint"></ul>
+    <div class="tablebox"><table id="calCmp" class="caltbl"></table></div>
+    <div class="inline"><button type="button" class="primary" id="calApply">Appliquer ces réglages</button><button type="button" class="ghost" id="calDrop">Garder les réglages actuels</button></div>
+  </section>
+</section>
+
+<section id="vAssist" class="wrap view" hidden>
+  <div class="vhead">
+    <div><h2 class="fxtitle">Faire évoluer l'appli avec Claude</h2>
+    <p class="hint">Décris ce que tu veux changer ou ajouter, comme tu me l'écrirais dans la conversation. Claude modifie l'appli et elle se recharge toute seule, sans réinstaller. Tes événements, archives et réglages ne sont jamais touchés. Si une modification ne te plaît pas, « Annuler la dernière modification » remet la version d'avant.</p></div>
+  </div>
+  <div class="assistgrid">
+    <section class="panel">
+      <h2>Ta demande</h2>
+      <textarea id="aiInstr" rows="7" placeholder="ex. Ajoute une colonne « Ouverture du ravito » dans le tableau, une heure avant le passage de la tête.&#10;ex. Dans le PDF, mets le logo de la course en haut à droite.&#10;ex. Sur la carte du flux, affiche le nombre de coureurs estimés à chaque ravito."></textarea>
+      <div class="inline"><button type="button" class="primary" id="aiSend">Envoyer à Claude</button><span class="hint" id="aiProg"></span></div>
+      <div id="aiOut" class="aiout" hidden></div>
+    </section>
+    <section class="panel">
+      <h2>Historique des évolutions</h2>
+      <ul id="aiHist" class="aihist"></ul>
+      <div class="inline"><button type="button" class="ghost" id="aiUndo">Annuler la dernière modification</button><button type="button" class="ghost" id="aiReset">Revenir à la version d'origine</button></div>
+      <p class="hint">Si l'appli ne démarrait plus après une modification, elle reviendrait toute seule à la version précédente. Le menu Fichier › « Revenir à l'interface d'origine » marche dans tous les cas.</p>
+    </section>
+    <section class="panel">
+      <h2>Connexion à Claude</h2>
+      <p class="hint">Il faut une clé API Anthropic (console.anthropic.com › API Keys), facturée à l'usage sur ton compte Anthropic. Elle est gardée dans le trousseau du Mac.</p>
+      <div class="field"><label for="aiKey">Clé API</label><input id="aiKey" type="password" placeholder="sk-ant-…" autocomplete="off"></div>
+      <div class="field"><label for="aiModel">Modèle</label><select id="aiModel"><option value="claude-opus-5-5">Claude Opus 5.5 (le plus fiable)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (plus rapide, moins cher)</option></select></div>
+      <div class="inline"><button type="button" id="aiSaveKey">Enregistrer</button><span class="hint" id="aiKeyState"></span></div>
+    </section>
+  </div>
+</section>
+
+<div id="shareDlg" class="dlg" hidden>
+  <div class="dlgbox" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+    <h2 id="shTitle" class="fxtitle">Partager en lecture seule</h2>
+    <p class="hint">Ton prestataire ouvre un lien web, sans compte ni logiciel : il voit les tableaux, le profil et le flux de course sur la carte, et peut sortir le PDF. Quand tu modifies l'événement ici, sa page se met à jour toute seule (compte 1 à 2 minutes).</p>
+    <details id="shCfgBox" class="arc">
+      <summary>Espace de partage GitHub <span id="shCfgState" class="count"></span></summary>
+      <div class="row2">
+        <div class="field"><label for="shOwner">Ton identifiant GitHub</label><input id="shOwner" type="text" placeholder="ex. paullebois" autocomplete="off"></div>
+        <div class="field"><label for="shRepo">Dépôt</label><input id="shRepo" type="text" placeholder="tempo-partage" autocomplete="off"></div>
+      </div>
+      <div class="field"><label for="shToken">Jeton d'accès (gardé dans le trousseau du Mac)</label><input id="shToken" type="password" placeholder="github_pat_…" autocomplete="off"></div>
+      <div class="inline"><button type="button" class="primary" id="shSetup">Enregistrer et préparer l'espace</button></div>
+      <p class="msg" id="shCfgMsg" hidden></p>
+    </details>
+    <div id="shEvBox" class="panel">
+      <h2 id="shEvName">Cet événement</h2>
+      <div id="shOff"><p class="hint">Cet événement n'est pas encore partagé.</p><button type="button" class="primary" id="shStart">Partager cet événement</button></div>
+      <div id="shOn" hidden>
+        <div class="field"><label for="shLink">Lien à envoyer</label><div class="inline nowrap"><input id="shLink" type="text" readonly><button type="button" id="shCopy">Copier</button><button type="button" class="ghost" id="shOpen">Ouvrir</button></div></div>
+        <label class="check"><input type="checkbox" id="shAuto" checked> Mettre à jour le lien à chaque modification</label>
+        <p class="hint" id="shState"></p>
+        <div class="inline"><button type="button" id="shPush">Publier maintenant</button><button type="button" class="ghost" id="shStop">Arrêter le partage</button></div>
+      </div>
+    </div>
+    <div class="inline end"><button type="button" class="ghost" id="shClose">Fermer</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="model.js"></script>
+<script src="fit.js"></script>
+<script src="data/races_seed.js"></script>
+<script src="data/grk_track.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
