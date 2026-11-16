@@ -213,6 +213,26 @@ function maqRefs(F, km) {
   if (!near.length) return null;
   return { lead: near.filter((r) => r.idx).map((r) => ({ ...r, h: r.win })), last: near };
 }
+/* Format intermédiaire des Maquisards (entre le 44 km et le 104 km 2026, ex. 65 km) sans édition proche :
+   à cote égale, la vitesse moyenne du premier est calée entre celle du 104 km (plus lente) et celle du 44 km
+   (plus rapide), au prorata de la distance (échelle log). Rend une référence synthétique pour leadRefs. */
+function maqMidLead(F, course, opts) {
+  if (!/maquisard/i.test((EV.name || "") + " " + (F.label || ""))) return null;
+  const km = course.total, lo = MAQ_RESULTS.find((r) => r[0] === 2026 && r[1] === 44), hi = MAQ_RESULTS.find((r) => r[0] === 2026 && r[1] === 104);
+  if (!lo || !hi || !(km > lo[1] && km < hi[1])) return null;
+  const idx = opts.idx, tech = opts.tech;
+  // vitesse du premier, à la cote idx, sur une édition réelle recalée sur son vainqueur
+  const v = ([, k, dp, alt, win, ci]) => {
+    const kRef = parseDur(win) / TM.leaderHours(k, dp, alt, ci, tech);
+    return k / (TM.leaderHours(k, dp, alt, idx, tech) * kRef);
+  };
+  const vLo = v(lo), vHi = v(hi);
+  if (!(vLo > 0 && vHi > 0)) return null;
+  const w = Math.log(km / lo[1]) / Math.log(hi[1] / lo[1]);
+  const vT = Math.exp((1 - w) * Math.log(vLo) + w * Math.log(vHi));
+  const alt = Math.max(...course.ele);
+  return { year: "2026 (entre 44 et 104 km)", km, dp: course.dplus, alt, idx, h: km / vT };
+}
 const rawCache = new Map(); // trackId -> course rééchantillonnée
 async function computeFormat(F) {
   const tr = await getTrack(F.trackId);
@@ -223,9 +243,11 @@ async function computeFormat(F) {
   const ctx = { F, raw, course, nightFn: TM.makeNight(course) };
   const opts = optsOf(F), mq = maqRefs(F, course.total);
   if (mq) { opts.leadRefs = mq.lead; opts.lastRefs = mq.last; }
+  const mid = (!mq || !mq.lead.length) ? maqMidLead(F, course, opts) : null;
+  if (mid) opts.leadRefs = [mid];
   ctx.res = TM.compute(course, F.points.filter((p) => (p.name || "").trim()), opts);
   ctx.res.maq = mq ? [...new Set(mq.last.map((r) => r.year))].join(", ") : "";
-  ctx.res.maqLead = mq ? [...new Set(mq.lead.map((r) => r.year))].join(", ") : "";
+  ctx.res.maqLead = mid ? mid.year : mq ? [...new Set(mq.lead.map((r) => r.year))].join(", ") : "";
   applyBH(ctx.res, F);
   return ctx;
 }
