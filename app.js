@@ -1702,8 +1702,16 @@ async function viewerLoad(first) {
   const cur = EV ? EV.cur : 0;
   EV = p.ev; EV.cur = Math.min(cur || 0, EV.formats.length - 1);
   $("roBadge").hidden = false; $("roBadge").textContent = "Lecture seule · mis à jour le " + fmtDT(p.updated);
-  document.title = ((p.name || "Temporisation Ultra Trail") + " · temporisation");
+  const ligue = isLigue(EV.name || p.name);
+  document.documentElement.classList.toggle("ligue", ligue);
+  const bs = document.querySelector(".brand h1 span"); if (bs) bs.textContent = ligue ? " Ligue Ultra" : " Ultra Trail";
+  document.title = ((p.name || (ligue ? "Temporisation Ligue Ultra" : "Temporisation Ultra Trail")) + " · temporisation");
   return true;
+}
+// Événements publiés sous le nom « Temporisation Ligue Ultra » (page de consultation seulement)
+function isLigue(name) {
+  const n = String(name || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return /kiprun|3 vallees|trois vallees|western azur|tiger balm/.test(n);
 }
 
 /* ---------- Assistant Claude : faire évoluer l'appli ---------- */
