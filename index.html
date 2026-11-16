@@ -168,6 +168,14 @@ button.assist.primary { background: var(--lead); color: #fff }
 .assistgrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start }
 .assistgrid > .panel:first-child { grid-row: span 2 }
 @media (max-width: 1000px) { .assistgrid { grid-template-columns: minmax(0, 1fr) } }
+#pdfBox { margin-top: 14px }
+.pdflist { display: flex; flex-direction: column; gap: 10px; margin-top: 12px }
+.pdfitem { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--bg); display: flex; flex-direction: column; gap: 8px }
+.pdfitem .pdfhead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap }
+.pdfitem .pdfhead small { color: var(--muted) }
+.pdfitem textarea { width: 100%; box-sizing: border-box }
+.pdfitem textarea.pdftxt { font: 12px var(--f-mono) }
+.pdfitem details summary { cursor: pointer; font-size: 13px; color: var(--muted) }
 .aiout { background: var(--soft); border-radius: 6px; padding: 10px 12px; font-size: 13.5px; white-space: pre-wrap }
 .aiout.err { color: var(--accent); font-weight: 600 }
 .aiout code { display: block; font: 12.5px var(--f-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; margin: 6px 0; user-select: all; white-space: pre-wrap; word-break: break-all }
@@ -406,6 +414,13 @@ details.arc .count { color: var(--accent) }
       <div class="inline"><button type="button" class="primary" id="cfSave">Enregistrer la course</button><button type="button" class="ghost" id="cfCancel">Annuler</button></div>
     </section>
   </div>
+  <section class="panel edit-only" id="pdfBox">
+    <h2>Résultats en PDF</h2>
+    <p class="hint">Dépose ici les PDF de résultats (LiveTrail, chronométreur…). L'appli en lit le texte. Pour chaque PDF, écris dans l'encart comment Claude doit s'en servir, puis « Envoyer à Claude ». Tu peux aussi créer directement une course de la base avec le classement lu.</p>
+    <div class="drop" id="pdfDrop" tabindex="0" role="button" aria-label="Ajouter des PDF de résultats"><strong>Déposer un ou plusieurs PDF de résultats</strong><br>ou cliquer pour les choisir</div>
+    <input type="file" id="pdfFile" accept=".pdf,application/pdf" multiple hidden>
+    <div id="pdfList" class="pdflist"></div>
+  </section>
   <section class="panel" id="calOut" hidden>
     <h2>Résultat du recalage</h2>
     <ul id="calReport" class="hint"></ul>
