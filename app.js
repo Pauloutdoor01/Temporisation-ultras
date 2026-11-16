@@ -53,7 +53,7 @@ function idb() {
   });
   return idbP;
 }
-/* Dans l'appli Mac : fichiers JSON dans Documents/Tempo Ultra (via le pont « tempo »). Dans la visionneuse : mémoire seule. */
+/* Dans l'appli Mac : fichiers JSON dans Documents/Temporisation Ultra Trail (via le pont « tempo »). Dans la visionneuse : mémoire seule. */
 const STORE = window.tempo ? window.tempo.kv : (window.TEMPO_MODE === "viewer" ? memStore() : null);
 function memStore() {
   const m = new Map(), s = (n) => { if (!m.has(n)) m.set(n, new Map()); return m.get(n); };
@@ -454,15 +454,21 @@ function renderAll() {
   ].map(([l, v, k, note]) => `<div class="stat ${k || ""}"><span>${l}</span><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`).join("");
 
   const R = rowsOut(S);
-  let h = `<thead><tr><th colspan="4"></th><th colspan="3" class="grp">Section</th><th colspan="2" class="grp">Cumul</th><th class="grp g-lead" colspan="2">Tête de course</th>${fem ? `<th class="grp g-fem" colspan="2">1re femme</th>` : ""}<th class="grp g-last" colspan="2">Dernier coureur</th><th class="grp g-bh">BH</th></tr>
-  <tr><th class="l">N°</th><th class="l">Point</th><th>Alt.</th><th>Km</th><th>Km</th><th>D+</th><th>D-</th><th>D+</th><th>D-</th><th>Heure</th><th>Temps</th>${fem ? "<th>Heure</th><th>Temps</th>" : ""}<th>Heure</th><th>Temps</th><th>Saisie</th></tr></thead><tbody>`;
+  // vitesse moyenne (km/h) sur une distance parcourue en un temps donné (ms)
+  const spd = (km, ms) => (ms > 0 && km > 0 ? (km / (ms / 3.6e6)).toFixed(1) : "");
+  const secSpd = (i, k) => (i ? spd(res.rows[i].dkm, res.rows[i][k] - res.rows[i - 1][k]) : "");
+  const totKm = res.rows[res.rows.length - 1].km;
+  let h = `<thead><tr><th colspan="4"></th><th colspan="3" class="grp">Section</th><th colspan="2" class="grp">Cumul</th><th class="grp g-lead" colspan="3">Tête de course</th>${fem ? `<th class="grp g-fem" colspan="3">1re femme</th>` : ""}<th class="grp g-last" colspan="3">Dernier coureur</th><th class="grp g-bh">BH</th></tr>
+  <tr><th class="l">N°</th><th class="l">Point</th><th>Alt.</th><th>Km</th><th>Km</th><th>D+</th><th>D-</th><th>D+</th><th>D-</th><th>Heure</th><th>Temps</th><th title="Vitesse moyenne sur la section (km/h)">Vit.</th>${fem ? `<th>Heure</th><th>Temps</th><th title="Vitesse moyenne sur la section (km/h)">Vit.</th>` : ""}<th>Heure</th><th>Temps</th><th title="Vitesse moyenne sur la section (km/h)">Vit.</th><th>Saisie</th></tr></thead><tbody>`;
   R.forEach((o, i) => {
     const r = res.rows[i];
     const tag = o.type ? ` <span class="tag ${r.type}">${o.type}</span>` : "";
     h += `<tr class="${i === R.length - 1 ? "end" : ""}"><td class="l num">${o.n}</td><td class="l name">${esc(o.name)}${tag}</td><td class="num">${o.alt}</td><td class="num">${o.km}</td><td class="num">${o.dkm}</td><td class="num">${o.dup}</td><td class="num">${o.ddown}</td><td class="num">${o.up}</td><td class="num">${o.down}</td>
-    <td class="lead">${o.lead}</td><td class="num">${o.leadE}</td>${fem ? `<td class="fem">${o.fem}</td><td class="num">${o.femE}</td>` : ""}<td class="last${r.bind ? " bind" : ""}" title="${r.bind ? "Recalé sur la barrière horaire" : ""}">${o.last}</td><td class="num">${o.lastE}</td><td class="bhcell">${i ? `<input ${VIEWER ? "readonly tabindex=\"-1\" " : ""}class="bhin${r.bhBad ? " bad" : ""}${r.bhEarly ? " early" : ""}" data-row="${i}" value="${esc(r.bhBad ? r.bhTxt : o.bh)}" placeholder="—" aria-label="Barrière horaire ${esc(o.name)}" title="${r.bhEarly ? "Cette barrière tombe avant le passage de la tête" : ""}">` : ""}</td></tr>`;
+    <td class="lead">${o.lead}</td><td class="num">${o.leadE}</td><td class="num">${secSpd(i, "lead")}</td>${fem ? `<td class="fem">${o.fem}</td><td class="num">${o.femE}</td><td class="num">${secSpd(i, "fem")}</td>` : ""}<td class="last${r.bind ? " bind" : ""}" title="${r.bind ? "Recalé sur la barrière horaire" : ""}">${o.last}</td><td class="num">${o.lastE}</td><td class="num">${secSpd(i, "last")}</td><td class="bhcell">${i ? `<input ${VIEWER ? "readonly tabindex=\"-1\" " : ""}class="bhin${r.bhBad ? " bad" : ""}${r.bhEarly ? " early" : ""}" data-row="${i}" value="${esc(r.bhBad ? r.bhTxt : o.bh)}" placeholder="—" aria-label="Barrière horaire ${esc(o.name)}" title="${r.bhEarly ? "Cette barrière tombe avant le passage de la tête" : ""}">` : ""}</td></tr>`;
   });
-  $("tbl").innerHTML = h + "</tbody>";
+  const gl = (cls, H) => `<td class="${cls}">Moyenne</td><td class="num">${dur(H)}</td><td class="num"><b>${spd(totKm, H * 3.6e6)}</b></td>`;
+  h += `</tbody><tfoot><tr class="avg"><td class="l" colspan="9">Vitesse moyenne globale (km/h)</td>${gl("lead", res.leadH)}${fem ? gl("fem", res.femH) : ""}${gl("last", res.lastH)}<td></td></tr></tfoot>`;
+  $("tbl").innerHTML = h;
   drawProfile($("prof"), S);
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
@@ -725,8 +731,8 @@ $("newEvent").onclick = async () => {
 };
 /* import du fichier exporté depuis la version en ligne (ou depuis une autre appli) */
 async function importArchives(text) {
-  let d; try { d = JSON.parse(text); } catch (e) { toast("Ce fichier n'est pas un export d'archives Tempo Ultra."); return; }
-  if (!d || d.type !== "tempo-ultra-archives" || !Array.isArray(d.archives)) { toast("Ce fichier n'est pas un export d'archives Tempo Ultra."); return; }
+  let d; try { d = JSON.parse(text); } catch (e) { toast("Ce fichier n'est pas un export d'archives Temporisation Ultra Trail."); return; }
+  if (!d || d.type !== "tempo-ultra-archives" || !Array.isArray(d.archives)) { toast("Ce fichier n'est pas un export d'archives Temporisation Ultra Trail."); return; }
   for (const [id, a] of Object.entries(d.tracks || {})) await storeOp("t", "readwrite", (st) => st.put(a, id));
   let n = 0;
   for (const r of d.archives) { if (!r || !r.id || !r.ev) continue; await storeOp("a", "readwrite", (st) => st.put(r, r.id)); n++; }
@@ -1311,7 +1317,7 @@ async function sharePush(quiet) {
       const as = await window.tempo.appSig();
       if (GH.cfg.appSig !== as) {
         const files = await window.tempo.viewerFiles();
-        for (const f of files) await ghPut(f.path, f.data, "Tempo : page de consultation mise à jour");
+        for (const f of files) await ghPut(f.path, f.data, "Temporisation : page de consultation mise à jour");
         GH.cfg.appSig = as; await storeOp("g", "readwrite", (st) => st.put(GH.cfg, "config"));
         EV.share.sig = "";
       }
@@ -1320,7 +1326,7 @@ async function sharePush(quiet) {
     const sig = hashStr(JSON.stringify([p.ev, p.params, Object.keys(p.tracks)]));
     if (quiet && sig === EV.share.sig && !EV.share.err) { GH.busy = false; renderShare(); return; }   // rien n'a changé depuis la dernière publication
     EV.share.sig = sig;
-    await ghPut(`s/${EV.share.id}.json`, utf8(JSON.stringify(p)), `Tempo : ${p.name || "événement"} (${new Date().toLocaleString("fr-FR")})`);
+    await ghPut(`s/${EV.share.id}.json`, utf8(JSON.stringify(p)), `Temporisation : ${p.name || "événement"} (${new Date().toLocaleString("fr-FR")})`);
     EV.share.last = p.updated; EV.share.err = "";
     if (!quiet) toast("Publié : la page de ton prestataire sera à jour d'ici 1 à 2 minutes.");
   } catch (e) { EV.share.err = e.message; if (!quiet) toast("Publication impossible : " + e.message); }
@@ -1373,9 +1379,9 @@ $("shSetup").onclick = async () => {
     await storeOp("g", "readwrite", (st) => st.put(GH.cfg, "config"));
     shMsg("Envoi de la page de consultation…");
     const files = await window.tempo.viewerFiles();
-    for (const f of files) await ghPut(f.path, f.data, "Tempo : page de consultation");
+    for (const f of files) await ghPut(f.path, f.data, "Temporisation : page de consultation");
     if (window.tempo.appSig) { GH.cfg.appSig = await window.tempo.appSig(); await storeOp("g", "readwrite", (st) => st.put(GH.cfg, "config")); }
-    await ghPut(".nojekyll", utf8(""), "Tempo : configuration");
+    await ghPut(".nojekyll", utf8(""), "Temporisation : configuration");
     shMsg("Activation de GitHub Pages…");
     let pagesNote = "";
     try { await gh("POST", `/repos/${owner}/${repo}/pages`, { build_type: "legacy", source: { branch: GH.cfg.branch, path: "/" } }); }
@@ -1406,7 +1412,7 @@ $("shStop").onclick = async () => {
     await ghLoad();
     const { owner, repo, branch } = GH.cfg, path = `s/${EV.share.id}.json`;
     const cur = await gh("GET", `/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, null, "application/vnd.github.object");
-    if (cur) await gh("DELETE", `/repos/${owner}/${repo}/contents/${path}`, { message: "Tempo : fin du partage", sha: cur.sha, branch });
+    if (cur) await gh("DELETE", `/repos/${owner}/${repo}/contents/${path}`, { message: "Temporisation : fin du partage", sha: cur.sha, branch });
     delete EV.share; saveWork(); renderShare(); toast("Partage arrêté : le lien ne fonctionne plus.");
   } catch (e) { toast("Impossible d'arrêter le partage : " + e.message); }
 };
@@ -1425,7 +1431,7 @@ async function viewerLoad(first) {
   const cur = EV ? EV.cur : 0;
   EV = p.ev; EV.cur = Math.min(cur || 0, EV.formats.length - 1);
   $("roBadge").hidden = false; $("roBadge").textContent = "Lecture seule · mis à jour le " + fmtDT(p.updated);
-  document.title = ((p.name || "Tempo Ultra") + " · temporisation");
+  document.title = ((p.name || "Temporisation Ultra Trail") + " · temporisation");
   return true;
 }
 
@@ -1433,16 +1439,29 @@ async function viewerLoad(first) {
 let AI_HIST = [];
 async function renderAssist() {
   if (!window.tempo || !window.tempo.ai) return;
-  const key = await window.tempo.secretGet("anthropic");
-  $("aiKey").value = ""; $("aiKey").placeholder = key ? "clé enregistrée (laisser vide pour la garder)" : "sk-ant-…";
-  $("aiKeyState").textContent = key ? "Clé enregistrée." : "Pas encore de clé.";
-  $("aiModel").value = await window.tempo.ai.model();
-  AI_HIST = (await window.tempo.ai.history()).filter((h) => h.kind === "assistant");
+  const pf = await window.tempo.ai.prefs();
+  $("aiMode").value = pf.mode; $("aiCodeModel").value = pf.codeModel; $("aiModel").value = pf.apiModel;
+  $("aiCodeBox").hidden = pf.mode !== "code"; $("aiApiBox").hidden = pf.mode !== "api";
+  $("aiKey").value = ""; $("aiKey").placeholder = pf.hasKey ? "clé enregistrée (laisser vide pour la garder)" : "sk-ant-…";
+  $("aiKeyState").textContent = pf.hasKey ? "Clé enregistrée." : "Pas encore de clé.";
+  if (pf.mode === "code") aiCheck();
   const all = await window.tempo.ai.history();
+  AI_HIST = all.filter((h) => h.kind === "assistant");
   $("aiHist").innerHTML = all.length ? all.map((h) => `<li><b>${esc(h.instruction || "")}</b>${h.resume ? `<span>${esc(h.resume)}</span>` : ""}<span>${fmtDT(h.date)}${h.kind !== "assistant" ? " · sauvegarde" : ""}</span></li>`).join("")
     : `<li><span>Aucune évolution pour l'instant : l'appli est dans sa version d'origine.</span></li>`;
   $("aiUndo").disabled = !all.length;
 }
+async function aiCheck() {
+  $("aiCodeState").textContent = "Vérification de Claude Code…";
+  const r = await window.tempo.ai.check();
+  $("aiInstall").hidden = !!r.found;
+  $("aiCodeState").textContent = r.found ? `Claude Code est installé (${r.version || "version inconnue"}). Si on te dit qu'il n'est pas connecté : Terminal, tape claude, connecte-toi, puis /exit.` : "Claude Code n'est pas encore installé sur ce Mac.";
+  return r;
+}
+$("aiMode").onchange = async () => { await window.tempo.ai.prefs({ anthropicMode: $("aiMode").value }); renderAssist(); };
+$("aiCodeModel").onchange = () => window.tempo.ai.prefs({ codeModel: $("aiCodeModel").value });
+$("aiCheck").onclick = aiCheck;
+$("aiStop").onclick = () => window.tempo.ai.cancel();
 function aiShow(txt, err) { const o = $("aiOut"); o.hidden = !txt; o.textContent = txt || ""; o.classList.toggle("err", !!err); }
 if (window.tempo && window.tempo.ai) window.tempo.ai.onProgress((p) => {
   if (p.step) $("aiProg").dataset.step = p.step;
@@ -1452,24 +1471,24 @@ $("bAssist").onclick = async () => { if (VIEW === "assist") { showView("table");
 $("aiSaveKey").onclick = async () => {
   const k = $("aiKey").value.trim();
   if (k) await window.tempo.secretSet("anthropic", k);
-  await window.tempo.ai.model($("aiModel").value);
+  await window.tempo.ai.prefs({ anthropicModel: $("aiModel").value });
   await renderAssist(); toast("Connexion à Claude enregistrée.");
 };
-$("aiModel").onchange = () => window.tempo.ai.model($("aiModel").value);
+$("aiModel").onchange = () => window.tempo.ai.prefs({ anthropicModel: $("aiModel").value });
 $("aiSend").onclick = async () => {
   const instr = $("aiInstr").value.trim();
   if (!instr) { toast("Écris d'abord ta demande."); return; }
   if ($("aiKey").value.trim()) await window.tempo.secretSet("anthropic", $("aiKey").value.trim());
-  const b = $("aiSend"); b.disabled = true; aiShow("");
+  const b = $("aiSend"); b.disabled = true; aiShow(""); $("aiStop").hidden = false;
   $("aiProg").dataset.step = "Envoi à Claude…"; $("aiProg").textContent = "Envoi à Claude…";
   try {
     await new Promise((r) => { saveWork(); setTimeout(r, 700); });   // on enregistre l'événement avant un éventuel rechargement
     const r = await window.tempo.ai.ask(instr, AI_HIST.slice(0, 6).reverse().map((h) => ({ instruction: h.instruction, resume: h.resume })));
-    if (!r.ok) { aiShow(r.error, true); return; }
+    if (!r.ok) { aiShow(r.error, true); if (r.needInstall) aiCheck(); return; }
     if (r.applied) { aiShow(r.resume + "\n\nRechargement de l'appli…"); $("aiProg").textContent = ""; return; }
     aiShow(r.resume);
   } catch (e) { aiShow("Erreur : " + e.message, true); }
-  finally { b.disabled = false; if (!$("aiOut").textContent.includes("Rechargement")) $("aiProg").textContent = ""; }
+  finally { b.disabled = false; $("aiStop").hidden = true; if (!$("aiOut").textContent.includes("Rechargement")) $("aiProg").textContent = ""; }
 };
 $("aiUndo").onclick = async () => { const r = await window.tempo.ai.undo(); if (!r.ok) toast(r.error); };
 $("aiReset").onclick = async () => {
