@@ -490,12 +490,13 @@ function renderAll() {
   if (!S) return;
   const res = S.res, c = S.course, o = optsOf(F);
   const maxAlt = Math.max(...c.ele), fem = res.femH != null;
+  const noRecal = /maquisard/i.test((EV && EV.name) || "");   // Maquisards : pas de mention « recalé » dans les cadres
   $("stats").innerHTML = [
     ["Distance", c.total.toFixed(1) + " km"], ["D+ / D-", `${Math.round(c.dplus)} / ${Math.round(c.dminus)}`],
     ["Point haut", Math.round(maxAlt) + " m"], ["Km-effort", Math.round(res.kme)],
-    ["Tête · " + o.idx, dur(res.leadH), "lead", res.refK && Math.abs(res.refK - 1) > 0.001 ? `recalé ${res.refK > 1 ? "+" : ""}${Math.round((res.refK - 1) * 100)} %` + (res.maqLead && !o.ref ? ` · Maquisards ${res.maqLead}` : "") : ""],
+    ["Tête · " + o.idx, dur(res.leadH), "lead", !noRecal && res.refK && Math.abs(res.refK - 1) > 0.001 ? `recalé ${res.refK > 1 ? "+" : ""}${Math.round((res.refK - 1) * 100)} %` + (res.maqLead && !o.ref ? ` · Maquisards ${res.maqLead}` : "") : ""],
     ...(fem ? [["1re femme · " + o.idxF, dur(res.femH), "fem"]] : []),
-    ["Dernier finisher", dur(res.lastH), "last", [res.lastK && Math.abs(res.lastK - 1) > 0.001 ? `recalé ${res.lastK > 1 ? "+" : "−"}${Math.abs(Math.round((res.lastK - 1) * 100))} % · Maquisards ${res.maq}` : "", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""].filter(Boolean).join(" · ")],
+    ["Dernier finisher", dur(res.lastH), "last", [!noRecal && res.lastK && Math.abs(res.lastK - 1) > 0.001 ? `recalé ${res.lastK > 1 ? "+" : "−"}${Math.abs(Math.round((res.lastK - 1) * 100))} % · Maquisards ${res.maq}` : "", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""].filter(Boolean).join(" · ")],
   ].map(([l, v, k, note]) => `<div class="stat ${k || ""}"><span>${l}</span><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`).join("");
 
   const R = rowsOut(S);
