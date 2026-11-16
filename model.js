@@ -233,15 +233,26 @@ const TM = (() => {
     /* Recalage propre au format : temps réel du vainqueur d'une édition passée sur ce parcours, avec sa cote.
        Le rapport réel / modèle s'applique à la tête et à la 1re femme (borné à ±40 %). */
     let refK = 1;
+    /* Éditions passées connues (opt.leadRefs, opt.lastRefs : {km, dp, alt, h, idx}) : rapport réel / modèle
+       sur chaque édition, on garde la médiane (un dernier atypique ne fausse pas tout), bornée à ±40 %. */
+    const med = (ks) => {
+      ks = ks.filter((k) => k > 0 && Number.isFinite(k)).sort((a, b) => a - b);
+      if (!ks.length) return 1;
+      const m = ks.length >> 1;
+      return Math.min(1.4, Math.max(0.6, ks.length % 2 ? ks[m] : (ks[m - 1] + ks[m]) / 2));
+    };
     if (opt.ref && opt.ref.h > 0 && opt.ref.idx >= 300) {
       const m = leaderHours(c.total, c.dplus, altMax, opt.ref.idx, opt.tech);
       if (m > 0) refK = Math.min(1.4, Math.max(0.6, opt.ref.h / m));
+    } else if (opt.leadRefs && opt.leadRefs.length) {
+      refK = med(opt.leadRefs.map((r) => r.h / leaderHours(r.km, r.dp, r.alt, r.idx, opt.tech)));
     }
+    const lastK = opt.lastRefs && opt.lastRefs.length ? med(opt.lastRefs.map((r) => r.h / lastHours(r.km, r.dp, r.alt, opt.tech))) : 1;
     const tLead = leaderHours(c.total, c.dplus, altMax, opt.idx, opt.tech) * refK;
     const lead = simulate(c, cps, tLead, PROFILES.tete, start);
     let fem = null;
     if (opt.idxF) fem = simulate(c, cps, leaderHours(c.total, c.dplus, altMax, opt.idxF, opt.tech) * refK, PROFILES.tete, start);
-    const tLast = lastHours(c.total, c.dplus, altMax, opt.tech);   // un parcours roulant ne fait pas gagner de temps aux derniers
+    const tLast = lastHours(c.total, c.dplus, altMax, opt.tech) * lastK;   // un parcours roulant ne fait pas gagner de temps aux derniers
     const last = simulate(c, cps, tLast, PROFILES.dernier, start);
     const rows = cps.map((p, i) => {
       const ii = idxAtKm(c, p.km), pi = i ? idxAtKm(c, cps[i - 1].km) : 0;
@@ -252,7 +263,7 @@ const TM = (() => {
         lead: lead[i], fem: fem ? fem[i] : null, last: last[i],
       };
     });
-    return { refK, leadCurve: lead.curve, lastCurve: last.curve, rows, kme, start, leadH: (lead[lead.length - 1] - start) / 3.6e6, lastH: (last[last.length - 1] - start) / 3.6e6, femH: fem ? (fem[fem.length - 1] - start) / 3.6e6 : null };
+    return { refK, lastK, leadCurve: lead.curve, lastCurve: last.curve, rows, kme, start, leadH: (lead[lead.length - 1] - start) / 3.6e6, lastH: (last[last.length - 1] - start) / 3.6e6, femH: fem ? (fem[fem.length - 1] - start) / 3.6e6 : null };
   }
 
   /* applique un D+ officiel : met à l'échelle les dénivelés sans toucher aux distances */
