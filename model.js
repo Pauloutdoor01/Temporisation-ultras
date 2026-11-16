@@ -230,10 +230,17 @@ const TM = (() => {
       { name: opt.finishName || "Arrivée", km: c.total, type: "passage" }];
     const start = opt.startMs;
     const altMax = Math.max(...c.ele);
-    const tLead = leaderHours(c.total, c.dplus, altMax, opt.idx, opt.tech);
+    /* Recalage propre au format : temps réel du vainqueur d'une édition passée sur ce parcours, avec sa cote.
+       Le rapport réel / modèle s'applique à la tête et à la 1re femme (borné à ±40 %). */
+    let refK = 1;
+    if (opt.ref && opt.ref.h > 0 && opt.ref.idx >= 300) {
+      const m = leaderHours(c.total, c.dplus, altMax, opt.ref.idx, opt.tech);
+      if (m > 0) refK = Math.min(1.4, Math.max(0.6, opt.ref.h / m));
+    }
+    const tLead = leaderHours(c.total, c.dplus, altMax, opt.idx, opt.tech) * refK;
     const lead = simulate(c, cps, tLead, PROFILES.tete, start);
     let fem = null;
-    if (opt.idxF) fem = simulate(c, cps, leaderHours(c.total, c.dplus, altMax, opt.idxF, opt.tech), PROFILES.tete, start);
+    if (opt.idxF) fem = simulate(c, cps, leaderHours(c.total, c.dplus, altMax, opt.idxF, opt.tech) * refK, PROFILES.tete, start);
     const tLast = lastHours(c.total, c.dplus, altMax, opt.tech);   // un parcours roulant ne fait pas gagner de temps aux derniers
     const last = simulate(c, cps, tLast, PROFILES.dernier, start);
     const rows = cps.map((p, i) => {
@@ -245,7 +252,7 @@ const TM = (() => {
         lead: lead[i], fem: fem ? fem[i] : null, last: last[i],
       };
     });
-    return { leadCurve: lead.curve, lastCurve: last.curve, rows, kme, start, leadH: (lead[lead.length - 1] - start) / 3.6e6, lastH: (last[last.length - 1] - start) / 3.6e6, femH: fem ? (fem[fem.length - 1] - start) / 3.6e6 : null };
+    return { refK, leadCurve: lead.curve, lastCurve: last.curve, rows, kme, start, leadH: (lead[lead.length - 1] - start) / 3.6e6, lastH: (last[last.length - 1] - start) / 3.6e6, femH: fem ? (fem[fem.length - 1] - start) / 3.6e6 : null };
   }
 
   /* applique un D+ officiel : met à l'échelle les dénivelés sans toucher aux distances */
