@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tempo Ultra</title>
+<title>Temporisation Ultra Trail</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="lib/leaflet.css">
@@ -105,6 +105,7 @@ td.bhcell { padding: 4px 6px }
 td.last.bind { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px }
 td small { display: block; font: 11px var(--f-mono); color: var(--muted); font-weight: 400 }
 tr.end td { border-bottom: 0; background: var(--soft) }
+tr.avg td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 600 }
 .tag { white-space: nowrap; display: inline-block; font: 600 10.5px var(--f-body); text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-radius: 3px; background: var(--soft); color: var(--muted) }
 .tag.base { background: var(--accent); color: var(--accent-ink) }
 .tag.complet { border: 1px solid var(--accent); color: var(--accent); background: none }
@@ -169,6 +170,7 @@ button.assist.primary { background: var(--lead); color: #fff }
 @media (max-width: 1000px) { .assistgrid { grid-template-columns: minmax(0, 1fr) } }
 .aiout { background: var(--soft); border-radius: 6px; padding: 10px 12px; font-size: 13.5px; white-space: pre-wrap }
 .aiout.err { color: var(--accent); font-weight: 600 }
+.aiout code { display: block; font: 12.5px var(--f-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; margin: 6px 0; user-select: all; white-space: pre-wrap; word-break: break-all }
 .aihist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow: auto }
 .aihist li { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); font-size: 12.5px; display: flex; flex-direction: column; gap: 3px }
 .aihist li b { font-size: 13px }
@@ -222,7 +224,7 @@ details.arc .count { color: var(--accent) }
 </style>
 
 <header class="top"><div class="wrap">
-  <div class="brand"><h1>Tempo<span>Ultra</span></h1><p id="brandSub">Tableau de temporisation calé sur la cote UTMB et les résultats de courses</p></div>
+  <div class="brand"><h1>Temporisation<span> Ultra Trail</span></h1><p id="brandSub">Tableau de temporisation calé sur la cote UTMB et les résultats de courses</p></div>
   <div class="actions">
     <span id="roBadge" class="robadge" hidden>Lecture seule</span>
     <button id="bFlux" class="primary" type="button">Flux de course</button>
@@ -243,7 +245,7 @@ details.arc .count { color: var(--accent) }
       <div class="inline"><button type="button" class="ghost" id="newEvent">Nouvel événement</button><button type="button" class="ghost" id="arcSave">Enregistrer dans les archives</button></div>
       <details class="arc" id="arcBox">
         <summary>Archives <span id="arcCount" class="count"></span></summary>
-        <p class="hint">Chaque export PDF range ici l'événement complet : tous les formats, leurs traces, points, cotes et barrières. Rouvre-le pour modifier et ressortir un PDF : l'archive suit tes changements. Les archives sont rangées dans le dossier Tempo Ultra de tes Documents.</p>
+        <p class="hint">Chaque export PDF range ici l'événement complet : tous les formats, leurs traces, points, cotes et barrières. Rouvre-le pour modifier et ressortir un PDF : l'archive suit tes changements. Les archives sont rangées dans le dossier Temporisation Ultra Trail de tes Documents.</p>
         <div class="field"><label for="arcQ">Rechercher</label><input id="arcQ" type="text" placeholder="Événement, format…"></div>
         <ul class="arc-list" id="arcList"></ul>
         <button type="button" class="ghost" id="arcImport">Importer des archives</button>
@@ -421,7 +423,7 @@ details.arc .count { color: var(--accent) }
     <section class="panel">
       <h2>Ta demande</h2>
       <textarea id="aiInstr" rows="7" placeholder="ex. Ajoute une colonne « Ouverture du ravito » dans le tableau, une heure avant le passage de la tête.&#10;ex. Dans le PDF, mets le logo de la course en haut à droite.&#10;ex. Sur la carte du flux, affiche le nombre de coureurs estimés à chaque ravito."></textarea>
-      <div class="inline"><button type="button" class="primary" id="aiSend">Envoyer à Claude</button><span class="hint" id="aiProg"></span></div>
+      <div class="inline"><button type="button" class="primary" id="aiSend">Envoyer à Claude</button><button type="button" class="ghost" id="aiStop" hidden>Arrêter</button><span class="hint" id="aiProg"></span></div>
       <div id="aiOut" class="aiout" hidden></div>
     </section>
     <section class="panel">
@@ -432,10 +434,21 @@ details.arc .count { color: var(--accent) }
     </section>
     <section class="panel">
       <h2>Connexion à Claude</h2>
-      <p class="hint">Il faut une clé API Anthropic (console.anthropic.com › API Keys), facturée à l'usage sur ton compte Anthropic. Elle est gardée dans le trousseau du Mac.</p>
-      <div class="field"><label for="aiKey">Clé API</label><input id="aiKey" type="password" placeholder="sk-ant-…" autocomplete="off"></div>
-      <div class="field"><label for="aiModel">Modèle</label><select id="aiModel"><option value="claude-opus-5-5">Claude Opus 5.5 (le plus fiable)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (plus rapide, moins cher)</option></select></div>
-      <div class="inline"><button type="button" id="aiSaveKey">Enregistrer</button><span class="hint" id="aiKeyState"></span></div>
+      <div class="field"><label for="aiMode">Passer par</label><select id="aiMode"><option value="code">Mon abonnement Claude (via Claude Code, sans surcoût)</option><option value="api">Une clé API Anthropic (facturée à l'usage)</option></select></div>
+      <div id="aiCodeBox">
+        <p class="hint" id="aiCodeState">Vérification de Claude Code…</p>
+        <div id="aiInstall" class="aiout" hidden>Installe Claude Code une fois : ouvre l'app Terminal, colle cette ligne et appuie sur Entrée :
+<code>curl -fsSL https://claude.ai/install.sh | bash</code>
+Puis tape <code>claude</code> et Entrée, et connecte-toi avec ton compte Claude (abonnement Pro). Quand c'est fait, tape /exit, reviens ici et clique sur « Vérifier ».</div>
+        <div class="field"><label for="aiCodeModel">Modèle</label><select id="aiCodeModel"><option value="">Celui de ton abonnement (par défaut)</option><option value="sonnet">Sonnet</option><option value="opus">Opus (si ton abonnement y a accès)</option></select></div>
+        <div class="inline"><button type="button" id="aiCheck">Vérifier</button></div>
+      </div>
+      <div id="aiApiBox" hidden>
+        <p class="hint">Clé créée sur console.anthropic.com › API Keys, facturée à l'usage sur ton compte Anthropic. Elle est gardée dans le trousseau du Mac.</p>
+        <div class="field"><label for="aiKey">Clé API</label><input id="aiKey" type="password" placeholder="sk-ant-…" autocomplete="off"></div>
+        <div class="field"><label for="aiModel">Modèle</label><select id="aiModel"><option value="claude-opus-5-5">Claude Opus 5.5 (le plus fiable)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (plus rapide, moins cher)</option></select></div>
+        <div class="inline"><button type="button" id="aiSaveKey">Enregistrer</button><span class="hint" id="aiKeyState"></span></div>
+      </div>
     </section>
   </div>
 </section>
