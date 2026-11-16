@@ -241,7 +241,10 @@ const TM = (() => {
     const lead = simulate(c, cps, tLead, PROFILES.tete, start);
     let fem = null;
     if (opt.idxF) fem = simulate(c, cps, leaderHours(c.total, c.dplus, altMax, opt.idxF, opt.tech) * refK, PROFILES.tete, start);
-    const tLast = lastHours(c.total, c.dplus, altMax, opt.tech);   // un parcours roulant ne fait pas gagner de temps aux derniers
+    /* Recalage du dernier propre au format : temps du dernier finisher d'une édition passée, ramené à ce parcours (borné à ±40 %). */
+    const tLast0 = lastHours(c.total, c.dplus, altMax, opt.tech);   // un parcours roulant ne fait pas gagner de temps aux derniers
+    const refLastK = opt.refLast > 0 && tLast0 > 0 ? Math.min(1.4, Math.max(0.6, opt.refLast / tLast0)) : 1;
+    const tLast = tLast0 * refLastK;
     const last = simulate(c, cps, tLast, PROFILES.dernier, start);
     const rows = cps.map((p, i) => {
       const ii = idxAtKm(c, p.km), pi = i ? idxAtKm(c, cps[i - 1].km) : 0;
@@ -252,7 +255,7 @@ const TM = (() => {
         lead: lead[i], fem: fem ? fem[i] : null, last: last[i],
       };
     });
-    return { refK, leadCurve: lead.curve, lastCurve: last.curve, rows, kme, start, leadH: (lead[lead.length - 1] - start) / 3.6e6, lastH: (last[last.length - 1] - start) / 3.6e6, femH: fem ? (fem[fem.length - 1] - start) / 3.6e6 : null };
+    return { refK, refLastK, leadCurve: lead.curve, lastCurve: last.curve, rows, kme, start, leadH: (lead[lead.length - 1] - start) / 3.6e6, lastH: (last[last.length - 1] - start) / 3.6e6, femH: fem ? (fem[fem.length - 1] - start) / 3.6e6 : null };
   }
 
   /* applique un D+ officiel : met à l'échelle les dénivelés sans toucher aux distances */
