@@ -1257,7 +1257,7 @@ $("cfSave").onclick = async () => {
   $("calForm").hidden = true; await loadRaces(); renderRaces();
   toast("Course enregistrée. Clique sur « Recaler le modèle » pour en tenir compte.");
 };
-$("bCal").onclick = async () => { if (VIEW === "calib") { showView("table"); return; } await loadRaces(); renderRaces(); $("calOut").hidden = true; showView("calib"); };
+$("bCal").onclick = async () => { if (VIEW === "calib") { showView("table"); return; } await loadRaces(); renderRaces(); $("calOut").hidden = true; if (!VIEWER) { await loadPdfs(); renderPdfs(); } showView("calib"); };
 $("calFit").onclick = async () => {
   const use = RACES.filter((r) => r.active !== false);
   if (!use.length) { toast("Coche au moins une course à utiliser."); return; }
@@ -1277,6 +1277,230 @@ $("calFit").onclick = async () => {
 };
 $("calApply").onclick = async () => { if (!CAL) return; await applyParams(CAL.params, true); CAL = null; $("calOut").hidden = true; renderRaces(); toast("Nouveaux réglages appliqués à tous tes événements. Tu peux revenir en arrière dans Réglages > Valeurs d'origine."); };
 $("calDrop").onclick = () => { CAL = null; $("calOut").hidden = true; };
+
+/* ---------- Résultats en PDF : lecture du texte (sans bibliothèque) ---------- */
+const PDFX = (() => {
+  const latin = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return s; };
+  async function inflate(u8) {
+    const chunks = []; let n = 0;
+    try {
+      const rd = new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate")).getReader();
+      for (;;) { const { done, value } = await rd.read(); if (done) break; chunks.push(value); n += value.length; }
+    } catch (e) { /* flux tronqué : on garde ce qui a été lu */ }
+    if (!n) return null;
+    const out = new Uint8Array(n); let o = 0; chunks.forEach((c) => { out.set(c, o); o += c.length; });
+    return out;
+  }
+  const hexBytes = (h) => { h = h.replace(/[^0-9a-f]/gi, ""); if (h.length % 2) h += "0"; const a = []; for (let i = 0; i < h.length; i += 2) a.push(parseInt(h.substr(i, 2), 16)); return a; };
+  const utf16 = (h) => { const b = hexBytes(h); let s = ""; for (let i = 0; i + 1 < b.length; i += 2) s += String.fromCharCode((b[i] << 8) | b[i + 1]); return s; };
+  function parseCMap(t) {
+    const map = new Map(); let len = 0;
+    const cs = t.match(/begincodespacerange\s*<([0-9a-f]+)>/i); if (cs) len = Math.ceil(cs[1].length / 2);
+    t.replace(/beginbfchar([\s\S]*?)endbfchar/g, (_, b) => { b.replace(/<([0-9a-f]+)>\s*<([0-9a-f]*)>/gi, (_, c, u) => { len = len || c.length / 2; map.set(parseInt(c, 16), utf16(u)); }); });
+    t.replace(/beginbfrange([\s\S]*?)endbfrange/g, (_, b) => {
+      b.replace(/<([0-9a-f]+)>\s*<([0-9a-f]+)>\s*(<[0-9a-f]*>|\[[^\]]*\])/gi, (_, a, z, d) => {
+        len = len || a.length / 2; const lo = parseInt(a, 16), hi = Math.min(parseInt(z, 16), lo + 65535);
+        if (d[0] === "[") { const L = d.match(/<([0-9a-f]*)>/gi) || []; for (let c = lo; c <= hi && c - lo < L.length; c++) map.set(c, utf16(L[c - lo].slice(1, -1))); }
+        else { const h = d.slice(1, -1), base = utf16(h); for (let c = lo; c <= hi; c++) map.set(c, base.slice(0, -1) + String.fromCharCode(base.charCodeAt(base.length - 1) + c - lo)); }
+      });
+    });
+    return { map, len: len || 2 };
+  }
+  function tokens(s) {
+    const out = []; let i = 0; const n = s.length;
+    while (i < n) {
+      const c = s[i];
+      if (/\s/.test(c)) { i++; continue; }
+      if (c === "%") { while (i < n && s[i] !== "\n" && s[i] !== "\r") i++; continue; }
+      if (c === "(") {
+        let d = 1, j = i + 1; const b = [];
+        while (j < n && d > 0) {
+          const ch = s[j];
+          if (ch === "\\") {
+            const e = s[j + 1];
+            if (/[0-7]/.test(e)) { let k = j + 1, o = ""; while (k < n && o.length < 3 && /[0-7]/.test(s[k])) o += s[k++]; b.push(parseInt(o, 8) & 255); j = k; continue; }
+            const m = { n: 10, r: 13, t: 9, b: 8, f: 12 }[e];
+            if (e === "\r" || e === "\n") { j += 2; if (e === "\r" && s[j] === "\n") j++; continue; }
+            b.push(m != null ? m : e.charCodeAt(0)); j += 2; continue;
+          }
+          if (ch === "(") d++; else if (ch === ")") { d--; if (!d) break; }
+          b.push(ch.charCodeAt(0)); j++;
+        }
+        out.push({ s: b }); i = j + 1; continue;
+      }
+      if (c === "<" && s[i + 1] === "<") { out.push({ op: "<<" }); i += 2; continue; }
+      if (c === ">" && s[i + 1] === ">") { out.push({ op: ">>" }); i += 2; continue; }
+      if (c === "<") { const j = s.indexOf(">", i); out.push({ s: hexBytes(s.slice(i + 1, j < 0 ? n : j)) }); i = j < 0 ? n : j + 1; continue; }
+      if (c === "[" || c === "]") { out.push({ op: c }); i++; continue; }
+      if (c === "/") { let j = i + 1; while (j < n && !/[\s\/\[\]()<>{}%]/.test(s[j])) j++; out.push({ name: s.slice(i + 1, j) }); i = j; continue; }
+      let j = i; while (j < n && !/[\s\/\[\]()<>{}%]/.test(s[j])) j++;
+      if (j === i) { i++; continue; }
+      const w = s.slice(i, j); i = j;
+      if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(w)) { out.push({ num: +w }); continue; }
+      if (w === "ID") { const k = s.indexOf("EI", i); i = k < 0 ? n : k + 2; continue; }   // image en ligne : on saute
+      out.push({ op: w });
+    }
+    return out;
+  }
+  const mul = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+  function runContent(src, fonts) {
+    const items = []; let ctm = [1, 0, 0, 1, 0, 0], lm = [1, 0, 0, 1, 0, 0], tl = 0, font = null, st = [], arr = null;
+    const gs = [];
+    const dec = (b) => {
+      if (font) { let s = ""; for (let i = 0; i + font.len <= b.length; i += font.len) { let c = 0; for (let k = 0; k < font.len; k++) c = (c << 8) | b[i + k]; s += font.map.get(c) ?? ""; } return s; }
+      return String.fromCharCode(...b);
+    };
+    const put = (str) => { if (!str) return; const m = mul(lm, ctm); items.push({ x: m[4], y: m[5], t: str }); };
+    const move = (tx, ty) => { lm = [lm[0], lm[1], lm[2], lm[3], lm[4] + tx * lm[0] + ty * lm[2], lm[5] + tx * lm[1] + ty * lm[3]]; };
+    for (const tk of tokens(src)) {
+      if (tk.op === "[") { arr = []; continue; }
+      if (tk.op === "]") { st.push({ arr: arr || [] }); arr = null; continue; }
+      if (arr) { arr.push(tk); continue; }
+      if (!tk.op || tk.op === "<<" || tk.op === ">>") { st.push(tk); continue; }
+      const nums = st.filter((x) => x.num != null).map((x) => x.num), last = st[st.length - 1];
+      switch (tk.op) {
+        case "q": gs.push(ctm); break;
+        case "Q": ctm = gs.pop() || ctm; break;
+        case "cm": if (nums.length >= 6) ctm = mul(nums.slice(-6), ctm); break;
+        case "BT": lm = [1, 0, 0, 1, 0, 0]; break;
+        case "Tm": if (nums.length >= 6) lm = nums.slice(-6); break;
+        case "Td": move(nums[nums.length - 2] || 0, nums[nums.length - 1] || 0); break;
+        case "TD": tl = -(nums[nums.length - 1] || 0); move(nums[nums.length - 2] || 0, nums[nums.length - 1] || 0); break;
+        case "TL": tl = nums[nums.length - 1] || 0; break;
+        case "T*": move(0, -tl); break;
+        case "Tf": { const nm = st.find((x) => x.name); font = nm ? fonts[nm.name] || null : null; break; }
+        case "Tj": if (last && last.s) put(dec(last.s)); break;
+        case "'": case "\"": move(0, -tl); if (last && last.s) put(dec(last.s)); break;
+        case "TJ": if (last && last.arr) put(last.arr.map((x) => (x.s ? dec(x.s) : x.num != null && x.num < -250 ? " " : "")).join("")); break;
+      }
+      st = [];
+    }
+    return items;
+  }
+  function lines(items) {
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    const rows = [];
+    items.forEach((it) => { const r = rows[rows.length - 1]; if (r && Math.abs(r.y - it.y) < 2.5) r.a.push(it); else rows.push({ y: it.y, a: [it] }); });
+    return rows.map((r) => r.a.sort((a, b) => a.x - b.x).map((x) => x.t.replace(/\s+/g, " ").trim()).filter(Boolean).join("  ")).filter(Boolean).join("\n");
+  }
+  async function extract(buf) {
+    const bytes = new Uint8Array(buf), s = latin(bytes);
+    if (!s.startsWith("%PDF")) throw new Error("ce fichier n'est pas un PDF");
+    const objs = new Map(), streams = new Map(), contents = [];
+    s.replace(/(\d+)\s+0\s+obj\b([\s\S]{0,3000}?)(?=\bstream\r?\n|endobj)/g, (_, num, txt) => { objs.set(+num, txt); return ""; });
+    const re = /\bstream\r?\n/g; let m;
+    while ((m = re.exec(s))) {
+      const st = m.index + m[0].length, en = s.indexOf("endstream", st); if (en < 0) break;
+      re.lastIndex = en + 9;
+      const pre = s.slice(Math.max(0, m.index - 3000), m.index), hits = [...pre.matchAll(/(\d+)\s+0\s+obj\b/g)], lh = hits[hits.length - 1];
+      const head = lh ? pre.slice(lh.index) : pre, num = lh ? +lh[1] : null;
+      if (/\/Subtype\s*\/Image|\/Length1|\/Length2|\/Type\s*\/XRef|\/Subtype\s*\/(Type1C|CIDFontType0C|OpenType)/.test(head)) continue;
+      const filt = (head.match(/\/Filter\s*(\[[^\]]*\]|\/\w+)/) || [])[1] || "";
+      let raw = bytes.subarray(st, en);
+      if (filt) { if (filt.replace(/[\[\]\s]/g, "") !== "/FlateDecode") continue; raw = await inflate(raw); if (!raw) continue; }
+      const txt = latin(raw);
+      if (/\/Type\s*\/ObjStm/.test(head)) {   // objets compressés : on récupère les dictionnaires (polices…)
+        const first = +((head.match(/\/First\s+(\d+)/) || [])[1] || 0), hd = txt.slice(0, first).trim().split(/\s+/).map(Number);
+        for (let k = 0; k + 1 < hd.length; k += 2) objs.set(hd[k], txt.slice(first + hd[k + 1], k + 3 < hd.length ? first + hd[k + 3] : undefined));
+        continue;
+      }
+      if (num != null) streams.set(num, txt);
+      if (/begincmap/.test(txt)) continue;
+      if (/\b(Tj|TJ)\b/.test(txt) && /\bBT\b/.test(txt)) contents.push({ num, txt });
+    }
+    // police (nom /F1) -> table ToUnicode, via les dictionnaires de ressources
+    const fonts = {};
+    const dictOf = (v) => { const r = v.match(/^\s*(\d+)\s+0\s+R/); return r ? objs.get(+r[1]) || "" : v; };
+    for (const txt of objs.values()) {
+      const fm = txt.match(/\/Font\s*(<<[\s\S]*?>>|\d+\s+0\s+R)/); if (!fm) continue;
+      dictOf(fm[1]).replace(/\/([^\s\/<>\[\]()]+)\s+(\d+)\s+0\s+R/g, (_, nm, on) => {
+        const fd = objs.get(+on) || "", tu = fd.match(/\/ToUnicode\s+(\d+)\s+0\s+R/);
+        if (tu && streams.has(+tu[1]) && !fonts[nm]) fonts[nm] = parseCMap(streams.get(+tu[1]));
+        return "";
+      });
+    }
+    const pages = contents.map((c) => lines(runContent(c.txt, fonts))).filter(Boolean);
+    return pages.join("\n\n").replace(/\u0000/g, "");
+  }
+  return { extract };
+})();
+
+/* ---------- Résultats en PDF : rangement et usage ---------- */
+const PDF_PFX = "pdfres_";
+let PDFS = [];
+async function loadPdfs() {
+  const ks = ((await storeOp("s", "readonly", (st) => st.getAllKeys())) || []).filter((k) => String(k).startsWith(PDF_PFX));
+  const out = [];
+  for (const k of ks) { const d = await storeOp("s", "readonly", (st) => st.get(k)); if (d && d.id) out.push(d); }
+  PDFS = out.sort((a, b) => (b.date || 0) - (a.date || 0));
+}
+const savePdf = (d) => storeOp("s", "readwrite", (st) => st.put(d, d.id));
+function renderPdfs() {
+  const box = $("pdfList"); if (!box) return;
+  box.innerHTML = PDFS.map((d) => {
+    const nl = (d.text || "").split("\n").filter((l) => l.trim()).length, nr = FIT.parseResults(d.text || "").withIdx.length;
+    return `<div class="pdfitem" data-id="${esc(d.id)}">
+      <div class="pdfhead"><b>${esc(d.name)}</b><small>ajouté le ${fmtDT(d.date)} · ${d.text ? `${nl} ligne(s) de texte lues, ${nr} coureur(s) avec cote et temps` : "aucun texte lu (PDF scanné ?) : colle le texte toi-même ci-dessous"}</small></div>
+      <div class="field"><label>Tes instructions à Claude pour ce résultat</label>
+        <textarea rows="3" data-note placeholder="ex. Sers-toi des temps de la 1re femme pour régler le modèle femmes.&#10;ex. Compare les heures de passage au ravito de Val Thorens avec mes prévisions et ajuste les arrêts.">${esc(d.note || "")}</textarea></div>
+      <details><summary>Texte lu dans le PDF (tu peux le corriger)</summary><textarea class="pdftxt" rows="10" data-text>${esc(d.text || "")}</textarea></details>
+      <div class="inline"><button type="button" class="primary sm" data-claude>Envoyer à Claude</button><button type="button" class="ghost sm" data-race>Créer une course avec ce classement</button><button type="button" class="ghost sm" data-pdel>Supprimer</button></div>
+    </div>`;
+  }).join("");
+}
+async function addPdfs(files) {
+  for (const f of files) {
+    if (!f || !/\.pdf$/i.test(f.name) && f.type !== "application/pdf") { toast("« " + (f && f.name) + " » n'est pas un PDF."); continue; }
+    let text = "";
+    try { text = await PDFX.extract(await f.arrayBuffer()); } catch (e) { toast("Lecture de « " + f.name + " » impossible : " + e.message); }
+    const d = { id: uid(PDF_PFX), name: f.name, size: f.size, date: Date.now(), note: "", text };
+    await savePdf(d); PDFS.unshift(d);
+  }
+  renderPdfs();
+  toast("PDF ajouté. Écris tes instructions dans l'encart, puis « Envoyer à Claude ».");
+}
+if ($("pdfDrop")) {
+  const pd = $("pdfDrop"), pf = $("pdfFile");
+  pd.onclick = () => pf.click();
+  pd.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pf.click(); } };
+  pf.onchange = () => { addPdfs([...pf.files]); pf.value = ""; };
+  pd.ondragover = (e) => { e.preventDefault(); pd.classList.add("over"); };
+  pd.ondragleave = () => pd.classList.remove("over");
+  pd.ondrop = (e) => { e.preventDefault(); pd.classList.remove("over"); addPdfs([...e.dataTransfer.files]); };
+  const pdfT = {};
+  $("pdfList").addEventListener("input", (e) => {
+    const it = e.target.closest(".pdfitem"); if (!it) return;
+    const d = PDFS.find((x) => x.id === it.dataset.id); if (!d) return;
+    if (e.target.hasAttribute("data-note")) d.note = e.target.value;
+    if (e.target.hasAttribute("data-text")) d.text = e.target.value;
+    clearTimeout(pdfT[d.id]); pdfT[d.id] = setTimeout(() => savePdf(d), 500);
+  });
+  $("pdfList").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"), it = e.target.closest(".pdfitem"); if (!b || !it) return;
+    const d = PDFS.find((x) => x.id === it.dataset.id); if (!d) return;
+    if (b.hasAttribute("data-pdel")) {
+      if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Confirmer"; b.classList.add("danger"); setTimeout(() => { delete b.dataset.armed; b.textContent = "Supprimer"; b.classList.remove("danger"); }, 4000); return; }
+      await storeOp("s", "readwrite", (st) => st.delete(d.id)); PDFS = PDFS.filter((x) => x !== d); renderPdfs(); toast("PDF retiré.");
+    }
+    if (b.hasAttribute("data-race")) {
+      const rows = (d.text || "").split("\n").filter((l) => /\d{1,3}\s*[:h]\s*\d{2}/.test(l));
+      if (!rows.length) { toast("Aucune ligne avec un temps trouvée dans le texte de ce PDF."); return; }
+      openRace(null);
+      $("cfName").value = d.name.replace(/\.pdf$/i, ""); $("cfSrc").value = "PDF : " + d.name + (d.note ? " · " + d.note.replace(/\s+/g, " ").slice(0, 120) : "");
+      $("cfRes").value = rows.join("\n"); resInfo();
+      $("calForm").scrollIntoView({ behavior: "smooth" });
+      toast("Complète la distance, le D+ et le point haut, puis enregistre la course.");
+    }
+    if (b.hasAttribute("data-claude")) {
+      if (!(d.note || "").trim()) { toast("Écris d'abord dans l'encart comment Claude doit se servir de ce résultat."); it.querySelector("[data-note]").focus(); return; }
+      const MAX = 60000, t = (d.text || "").trim();
+      const instr = `Résultats de course en PDF : « ${d.name} ».\n\nMes instructions pour ce résultat :\n${d.note.trim()}\n\n` +
+        (t ? `Texte lu dans le PDF${t.length > MAX ? " (tronqué)" : ""} :\n${t.slice(0, MAX)}` : "(Aucun texte n'a pu être lu dans ce PDF.)");
+      await renderAssist(); showView("assist"); $("aiInstr").value = instr;
+      toast("Ta demande est prête avec le contenu du PDF : relis-la puis clique sur « Envoyer à Claude ».");
+    }
+  });
+}
 
 /* ---------- Partage en lecture seule (GitHub Pages) ---------- */
 const GH = { cfg: null, token: null, timer: 0, busy: false };
