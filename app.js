@@ -194,6 +194,7 @@ function optsOf(F) {
     idxF: +F.idxF || null,
     tech: F.tech || "standard",
     ref: F.refTime && +F.refIdx ? { h: parseDur(F.refTime), idx: +F.refIdx } : null,
+    refLast: F.refLast ? parseDur(F.refLast) : null,
   };
 }
 const rawCache = new Map(); // trackId -> course rééchantillonnée
@@ -225,6 +226,7 @@ function fillForm() {
   $("idxF").value = F.idxF || "";
   $("refTime").value = F.refTime || "";
   $("refIdx").value = F.refIdx || "";
+  $("refLast").value = F.refLast || "";
   $("gpxMsg").textContent = F.gpxInfo || (F.trackId ? "" : "Aucune trace pour ce format.");
   $("gpxMsg").classList.toggle("err", F.trackId === PRESET_TRACK || !F.trackId);
   $("delFmt").disabled = EV.formats.length < 2;
@@ -453,7 +455,7 @@ function renderAll() {
     ["Point haut", Math.round(maxAlt) + " m"], ["Km-effort", Math.round(res.kme)],
     ["Tête · " + o.idx, dur(res.leadH), "lead", res.refK && Math.abs(res.refK - 1) > 0.001 ? `recalé ${res.refK > 1 ? "+" : ""}${Math.round((res.refK - 1) * 100)} %` : ""],
     ...(fem ? [["1re femme · " + o.idxF, dur(res.femH), "fem"]] : []),
-    ["Dernier finisher", dur(res.lastH), "last", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""],
+    ["Dernier finisher", dur(res.lastH), "last", [res.refLastK && Math.abs(res.refLastK - 1) > 0.001 ? `recalé ${res.refLastK > 1 ? "+" : ""}${Math.round((res.refLastK - 1) * 100)} %` : "", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""].filter(Boolean).join(" · ")],
   ].map(([l, v, k, note]) => `<div class="stat ${k || ""}"><span>${l}</span><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`).join("");
 
   const R = rowsOut(S);
@@ -699,6 +701,7 @@ $("idxR").oninput = () => { $("idx").value = $("idxR").value; curF().idx = +$("i
 $("idxF").oninput = () => { if ($("idxF").value) $("idxFR").value = $("idxF").value; curF().idxF = $("idxF").value; recompute(); };
 $("refTime").addEventListener("input", () => { curF().refTime = $("refTime").value.trim(); recompute(); });
 $("refIdx").addEventListener("input", () => { curF().refIdx = $("refIdx").value === "" ? "" : +$("refIdx").value; recompute(); });
+$("refLast").addEventListener("input", () => { curF().refLast = $("refLast").value.trim(); recompute(); });
 $("idxFR").oninput = () => { $("idxF").value = $("idxFR").value; curF().idxF = $("idxFR").value; recompute(); };
 $("addPt").onclick = () => { const k = S ? +(S.course.total / 2).toFixed(1) : 1; curF().points.push({ name: "Nouveau point", km: k, type: "passage" }); renderPts(); recompute(); };
 $("clearPts").onclick = () => { curF().points = []; renderPts(); recompute(); };
