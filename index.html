@@ -289,6 +289,11 @@ details.arc .count { color: var(--accent) }
       <div class="field"><label for="idxF">Cote UTMB de la meilleure inscrite (facultatif)</label>
         <div class="idx f"><input id="idxF" type="number" min="400" max="990" placeholder="—"><input id="idxFR" type="range" min="500" max="980" value="760" aria-label="Cote UTMB de la meilleure inscrite"></div></div>
       <p class="hint">Le dernier coureur ne dépend pas de ces cotes : il suit le profil d'un finisher de fin de classement sur ce type de parcours.</p>
+      <div class="row2">
+        <div class="field"><label for="refTime">Vainqueur d'une édition passée (facultatif)</label><input id="refTime" type="text" placeholder="ex. 10:50"></div>
+        <div class="field"><label for="refIdx">Sa cote UTMB</label><input id="refIdx" type="number" min="300" max="990" placeholder="ex. 775"></div>
+      </div>
+      <p class="hint">Sur le même parcours : la tête et la 1re femme sont recalées pour que le modèle retrouve ce temps avec cette cote. Le dernier coureur n'est pas modifié.</p>
     </section>
 
     <section class="panel">
