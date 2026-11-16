@@ -28,6 +28,12 @@
 :root[data-theme="dark"] {
   --bg: #111614; --surface: #19201d; --ink: #e5ebe8; --muted: #97a59f; --line: #2c3632; --soft: #212a26;
   --accent: #ff7349; --accent-ink: #1a0d08; --lead: #5fb4d3; --fem: #e27aa9; --last: #d8a54a; --night: rgba(255,255,255,.05); --c1: #5fb4d3; --c2: #f08a52; --c3: #79c47b; --c4: #b98ce0; --c5: #e3bb4a; --c6: #ec79ad; color-scheme: dark }
+/* Habillage « Temporisation Ligue Ultra » (page de consultation de certains événements) : fond blanc, orange → vert */
+html.ligue:root {
+  --bg: #ffffff; --surface: #ffffff; --ink: #17201d; --muted: #5a6762; --line: #d6ddd8; --soft: #eef2ef;
+  --accent: #1f8a4c; --accent-ink: #ffffff;
+  --lead: #1d6c88; --fem: #a8336a; --last: #946510; --night: rgba(23, 32, 29, .07);
+  --c1: #1d6c88; --c2: #d2561f; --c3: #3c8a3f; --c4: #8a4bb0; --c5: #b8890b; --c6: #c2347a; color-scheme: light }
 body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); }
 * { box-sizing: border-box }
 .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1500px; margin: 0 auto }
