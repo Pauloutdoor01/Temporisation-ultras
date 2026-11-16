@@ -195,6 +195,24 @@ function optsOf(F) {
     tech: F.tech || "standard",
     ref: F.refTime && +F.refIdx ? { h: parseDur(F.refTime), idx: +F.refIdx } : null,  };
 }
+/* Recalage propre à la Trace des Maquisards (et à elle seule) : résultats LiveTrail 2024, 2025 et 2026,
+   distance et D+ annoncés. Un format de l'événement prend les éditions de distance proche (±20 %). */
+const MAQ_RESULTS = [
+  // [année, km, D+, point haut, vainqueur, cote du vainqueur, dernier]
+  [2024, 100, 4450, 867, "10:20:27", 0, "22:39:47"], [2025, 100, 4100, 862, "10:11:21", 0, "22:59:02"], [2026, 104, 4040, 915, "10:51:48", 778, "23:49:00"],
+  [2024, 41, 1700, 866, "3:22:52", 0, "11:01:18"], [2025, 42, 1700, 862, "3:40:21", 0, "12:18:59"], [2026, 44, 1900, 915, "4:11:29", 830, "12:49:15"],
+  [2024, 28, 1200, 867, "2:13:14", 0, "7:27:12"], [2025, 28, 1190, 839, "2:20:39", 0, "7:47:05"], [2026, 31, 1435, 915, "2:52:37", 770, "13:52:04"],
+  [2024, 10, 150, 840, "0:34:21", 0, "2:33:23"], [2025, 10, 150, 839, "0:35:31", 0, "2:37:08"],
+  [2026, 16, 530, 915, "1:17:29", 750, "5:03:14"],
+  [2026, 7, 120, 548, "0:29:24", 720, "2:10:11"],
+];
+function maqRefs(F, km) {
+  if (!/maquisard/i.test((EV.name || "") + " " + (F.label || "")) || !(km > 0)) return null;
+  const near = MAQ_RESULTS.filter((r) => Math.abs(Math.log(r[1] / km)) < 0.2)
+    .map(([year, km, dp, alt, win, idx, last]) => ({ year, km, dp, alt, idx, win: parseDur(win), h: parseDur(last) }));
+  if (!near.length) return null;
+  return { lead: near.filter((r) => r.idx).map((r) => ({ ...r, h: r.win })), last: near };
+}
 const rawCache = new Map(); // trackId -> course rééchantillonnée
 async function computeFormat(F) {
   const tr = await getTrack(F.trackId);
@@ -203,7 +221,11 @@ async function computeFormat(F) {
   if (!raw) { raw = TM.buildCourse(tr); rawCache.set(F.trackId, raw); }
   const course = TM.scaleDistance(TM.scaleElevation(raw, +F.dplus, +F.dminus), +F.dist);
   const ctx = { F, raw, course, nightFn: TM.makeNight(course) };
-  ctx.res = TM.compute(course, F.points.filter((p) => (p.name || "").trim()), optsOf(F));
+  const opts = optsOf(F), mq = maqRefs(F, course.total);
+  if (mq) { opts.leadRefs = mq.lead; opts.lastRefs = mq.last; }
+  ctx.res = TM.compute(course, F.points.filter((p) => (p.name || "").trim()), opts);
+  ctx.res.maq = mq ? [...new Set(mq.last.map((r) => r.year))].join(", ") : "";
+  ctx.res.maqLead = mq ? [...new Set(mq.lead.map((r) => r.year))].join(", ") : "";
   applyBH(ctx.res, F);
   return ctx;
 }
@@ -449,9 +471,9 @@ function renderAll() {
   $("stats").innerHTML = [
     ["Distance", c.total.toFixed(1) + " km"], ["D+ / D-", `${Math.round(c.dplus)} / ${Math.round(c.dminus)}`],
     ["Point haut", Math.round(maxAlt) + " m"], ["Km-effort", Math.round(res.kme)],
-    ["Tête · " + o.idx, dur(res.leadH), "lead", res.refK && Math.abs(res.refK - 1) > 0.001 ? `recalé ${res.refK > 1 ? "+" : ""}${Math.round((res.refK - 1) * 100)} %` : ""],
+    ["Tête · " + o.idx, dur(res.leadH), "lead", res.refK && Math.abs(res.refK - 1) > 0.001 ? `recalé ${res.refK > 1 ? "+" : ""}${Math.round((res.refK - 1) * 100)} %` + (res.maqLead && !o.ref ? ` · Maquisards ${res.maqLead}` : "") : ""],
     ...(fem ? [["1re femme · " + o.idxF, dur(res.femH), "fem"]] : []),
-    ["Dernier finisher", dur(res.lastH), "last", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""],
+    ["Dernier finisher", dur(res.lastH), "last", [res.lastK && Math.abs(res.lastK - 1) > 0.001 ? `recalé ${res.lastK > 1 ? "+" : "−"}${Math.abs(Math.round((res.lastK - 1) * 100))} % · Maquisards ${res.maq}` : "", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""].filter(Boolean).join(" · ")],
   ].map(([l, v, k, note]) => `<div class="stat ${k || ""}"><span>${l}</span><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`).join("");
 
   const R = rowsOut(S);
