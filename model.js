@@ -247,7 +247,7 @@ const TM = (() => {
     } else if (opt.leadRefs && opt.leadRefs.length) {
       refK = med(opt.leadRefs.map((r) => r.h / leaderHours(r.km, r.dp, r.alt, r.idx, opt.tech)));
     }
-    const lastK = opt.lastRefs && opt.lastRefs.length ? med(opt.lastRefs.map((r) => r.h / lastHours(r.km, r.dp, r.alt, opt.tech))) : 1;
+    const lastK = opt.lastK > 0 ? opt.lastK : opt.lastRefs && opt.lastRefs.length ? med(opt.lastRefs.map((r) => r.h / lastHours(r.km, r.dp, r.alt, opt.tech))) : 1;
     const tLead = leaderHours(c.total, c.dplus, altMax, opt.idx, opt.tech) * refK;
     const lead = simulate(c, cps, tLead, PROFILES.tete, start);
     let fem = null;
