@@ -233,6 +233,26 @@ function maqMidLead(F, course, opts) {
   const alt = Math.max(...course.ele);
   return { year: "2026 (entre 44 et 104 km)", km, dp: course.dplus, alt, idx, h: km / vT };
 }
+/* Tiger Balm Ultra (et lui seul) : le dernier du 165 km est calé sur 3,7 km/h de moyenne ;
+   le même rapport réel / modèle s'applique au dernier des autres distances de l'événement. */
+const TIGER_LAST_KMH = 3.7, TIGER_REF_KM = 165;
+async function tigerLastK() {
+  if (!/tiger\s*balm/i.test((EV && EV.name) || "")) return null;
+  const kmOf = (G) => +G.dist || parseFloat(String(G.label || "").replace(",", ".")) || 0;
+  let ref = null, best = 0.15;
+  for (const G of EV.formats) {
+    const k = kmOf(G), d = k > 0 ? Math.abs(Math.log(k / TIGER_REF_KM)) : 9;
+    if (d < best && G.trackId) { best = d; ref = G; }
+  }
+  if (!ref) return null;
+  const tr = await getTrack(ref.trackId);
+  if (!tr) return null;
+  let raw = rawCache.get(ref.trackId);
+  if (!raw) { raw = TM.buildCourse(tr); rawCache.set(ref.trackId, raw); }
+  const c = TM.scaleDistance(TM.scaleElevation(raw, +ref.dplus, +ref.dminus), +ref.dist);
+  const h = TM.lastHours(c.total, c.dplus, Math.max(...c.ele), ref.tech || "standard");
+  return h > 0 ? (c.total / TIGER_LAST_KMH) / h : null;
+}
 const rawCache = new Map(); // trackId -> course rééchantillonnée
 async function computeFormat(F) {
   const tr = await getTrack(F.trackId);
@@ -245,8 +265,11 @@ async function computeFormat(F) {
   if (mq) { opts.leadRefs = mq.lead; opts.lastRefs = mq.last; }
   const mid = (!mq || !mq.lead.length) ? maqMidLead(F, course, opts) : null;
   if (mid) opts.leadRefs = [mid];
+  const tk = await tigerLastK();
+  if (tk) opts.lastK = tk;
   ctx.res = TM.compute(course, F.points.filter((p) => (p.name || "").trim()), opts);
   ctx.res.maq = mq ? [...new Set(mq.last.map((r) => r.year))].join(", ") : "";
+  if (tk) ctx.res.lastNote = `calé sur ${String(TIGER_LAST_KMH).replace(".", ",")} km/h au ${TIGER_REF_KM} km`;
   ctx.res.maqLead = mid ? mid.year : mq ? [...new Set(mq.lead.map((r) => r.year))].join(", ") : "";
   applyBH(ctx.res, F);
   return ctx;
@@ -496,7 +519,7 @@ function renderAll() {
     ["Point haut", Math.round(maxAlt) + " m"], ["Km-effort", Math.round(res.kme)],
     ["Tête · " + o.idx, dur(res.leadH), "lead", !noRecal && res.refK && Math.abs(res.refK - 1) > 0.001 ? `recalé ${res.refK > 1 ? "+" : ""}${Math.round((res.refK - 1) * 100)} %` + (res.maqLead && !o.ref ? ` · Maquisards ${res.maqLead}` : "") : ""],
     ...(fem ? [["1re femme · " + o.idxF, dur(res.femH), "fem"]] : []),
-    ["Dernier finisher", dur(res.lastH), "last", [!noRecal && res.lastK && Math.abs(res.lastK - 1) > 0.001 ? `recalé ${res.lastK > 1 ? "+" : "−"}${Math.abs(Math.round((res.lastK - 1) * 100))} % · Maquisards ${res.maq}` : "", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""].filter(Boolean).join(" · ")],
+    ["Dernier finisher", dur(res.lastH), "last", [!noRecal && res.lastK && Math.abs(res.lastK - 1) > 0.001 ? `recalé ${res.lastK > 1 ? "+" : "−"}${Math.abs(Math.round((res.lastK - 1) * 100))} % · ${res.lastNote || "Maquisards " + res.maq}` : "", Math.abs(res.lastH - res.lastModelH) > 0.01 ? `sans BH : ${dur(res.lastModelH)}` : ""].filter(Boolean).join(" · ")],
   ].map(([l, v, k, note]) => `<div class="stat ${k || ""}"><span>${l}</span><b>${v}</b>${note ? `<small>${note}</small>` : ""}</div>`).join("");
 
   const R = rowsOut(S);
