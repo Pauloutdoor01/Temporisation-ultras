@@ -1131,8 +1131,206 @@ function mapUpdate(d, t, night) {
   });
 }
 
+/* ---------- Affluence aux ravitaillements ----------
+   Même modèle que le flux : le coureur de rang q (0 = tête, 1 = dernier) arrive à un point à
+   tête + q^spread × (dernier − tête), puis y reste un temps qui va de l'arrêt de la tête à celui du dernier.
+   On compte, par tranche de 5 min, le nombre moyen de coureurs présents sur chaque ravito. */
+const AF = { data: null, hover: null };
+const AF_TYPES = ["liquide", "complet", "base"];
+const AF_RANK = { liquide: 1, complet: 2, base: 3 };
+const AF_STEP = 5 * 60000;
+function afDefaults() {
+  const p = TM.getParams().profiles, o = {};
+  AF_TYPES.forEach((t) => { o[t] = +(((p.tete.stops[t] || 0) + (p.dernier.stops[t] || 0)) / 2).toFixed(1); });
+  return o;
+}
+function afStops() {
+  const d = afDefaults(), s = EV.affl || {}, o = {};
+  AF_TYPES.forEach((t) => { o[t] = s[t] != null && s[t] !== "" && Number.isFinite(+s[t]) ? Math.max(0, +s[t]) : d[t]; });
+  return o;
+}
+async function buildAffl() {
+  const ctxs = await allContexts();
+  const P = TM.getParams().profiles, st = afStops(), sp = SPREAD_();
+  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const groups = new Map(), noRun = [], fmts = [];
+  ctxs.forEach((ctx) => {
+    const F = ctx.F, idx = EV.formats.indexOf(F), label = (F.label || "").trim() || `Format ${idx + 1}`;
+    const rows = ctx.res.rows;
+    const rav = rows.filter((r, i) => i && i < rows.length - 1 && AF_TYPES.includes(r.type));
+    if (!rav.length) return;
+    const n = Math.max(0, Math.round(+F.runners || 0));
+    if (!n) { noRun.push(label); return; }
+    const fi = fmts.length;
+    fmts.push({ label, color: fcol(idx), n, nightFn: ctx.nightFn });
+    const K = Math.min(n, 400), wt = n / K;
+    rav.forEach((r) => {
+      const key = norm(r.name) || r.name;
+      let g = groups.get(key);
+      if (!g) groups.set(key, (g = { name: r.name.trim(), type: r.type, fis: new Set(), items: [], first: Infinity }));
+      if (AF_RANK[r.type] > AF_RANK[g.type]) g.type = r.type;
+      g.fis.add(fi); g.first = Math.min(g.first, r.lead);
+      const t0 = P.tete.stops[r.type] || 0, t1 = P.dernier.stops[r.type] || 0, mid = (t0 + t1) / 2;
+      for (let j = 0; j < K; j++) {
+        const q = (j + 0.5) / K, arr = r.lead + Math.pow(q, sp) * (r.last - r.lead);
+        const dw = (mid > 0 ? (t0 + q * (t1 - t0)) * st[r.type] / mid : st[r.type]) * 60000;
+        g.items.push([arr, arr + dw, wt, fi]);
+      }
+    });
+  });
+  const list = [...groups.values()].filter((g) => g.items.length).sort((a, b) => a.first - b.first);
+  if (!list.length) return { list, fmts, noRun };
+  let a0 = Infinity, a1 = -Infinity;
+  list.forEach((g) => g.items.forEach(([a, d]) => { if (a < a0) a0 = a; if (d > a1) a1 = d; }));
+  const tmin = Math.floor(a0 / 9e5) * 9e5, tmax = Math.ceil((a1 + 1) / 9e5) * 9e5, nb = Math.max(1, Math.ceil((tmax - tmin) / AF_STEP));
+  list.forEach((g) => {
+    g.ser = fmts.map(() => new Float64Array(nb));
+    const arrB = new Float64Array(nb);
+    g.open = Infinity; g.close = -Infinity; g.total = 0;
+    g.items.forEach(([a, d, w, fi]) => {
+      const b0 = Math.min(nb - 1, Math.floor((a - tmin) / AF_STEP));
+      arrB[b0] += w; g.total += w;
+      g.open = Math.min(g.open, a); g.close = Math.max(g.close, d);
+      if (d <= a) return;
+      const b1 = Math.min(nb - 1, Math.floor((d - tmin) / AF_STEP));
+      for (let b = b0; b <= b1; b++) {
+        const bs = tmin + b * AF_STEP, ov = Math.min(d, bs + AF_STEP) - Math.max(a, bs);
+        if (ov > 0) g.ser[fi][b] += w * ov / AF_STEP;
+      }
+    });
+    g.sum = new Float64Array(nb);
+    g.ser.forEach((s) => s.forEach((v, b) => { g.sum[b] += v; }));
+    g.peak = 0; g.peakT = tmin;
+    g.sum.forEach((v, b) => { if (v > g.peak) { g.peak = v; g.peakT = tmin + (b + 0.5) * AF_STEP; } });
+    // passages sur 1 h glissante
+    const win = Math.round(3.6e6 / AF_STEP);
+    let run = 0; g.hour = 0; g.hourT = tmin;
+    for (let b = 0; b < nb; b++) {
+      run += arrB[b]; if (b >= win) run -= arrB[b - win];
+      if (run > g.hour) { g.hour = run; g.hourT = tmin + (b + 1 - win) * AF_STEP; }
+    }
+    g.hourT = Math.max(tmin, g.hourT);
+    delete g.items;
+  });
+  return { list, fmts, noRun, tmin, tmax, nb };
+}
+async function openAffl() {
+  showView("affl");
+  $("afTitle").textContent = "Affluence ravitaillements" + ((EV.name || "").trim() ? " · " + EV.name.trim() : "");
+  const st = afStops();
+  AF_TYPES.forEach((t) => { $("afS_" + t).value = st[t]; });
+  AF.data = await buildAffl();
+  renderAffl();
+}
+function renderAffl() {
+  const D = AF.data; if (!D) return;
+  const warn = $("afWarn");
+  warn.hidden = !D.noRun.length;
+  warn.textContent = D.noRun.length ? `Pas de nombre de « Coureurs au départ » pour : ${D.noRun.join(", ")}. Ces formats ne sont pas comptés : renseigne-le dans le panneau « Format ».` : "";
+  $("afEmpty").hidden = !!D.list.length; $("afBody").hidden = !D.list.length;
+  if (!D.list.length) return;
+  const md = new Date(D.tmin).toDateString() !== new Date(D.tmax).toDateString();
+  const ck = (ms) => clock(ms, md);
+  $("afLegend").innerHTML = `<span class="lbl">Formats comptés</span>` + D.fmts.map((f) => `<span class="fxchip afleg" style="--fc:${f.color}">${esc(f.label)} · ${f.n} coureurs</span>`).join("");
+  let h = `<thead><tr><th class="l">Ravitaillement</th><th class="l">Formats</th><th>Coureurs attendus</th><th>1er arrivé</th><th>Dernier reparti</th><th>Pic simultané</th><th>Heure du pic</th><th title="Le plus grand nombre de coureurs qui arrivent en une heure">Arrivées max en 1 h</th></tr></thead><tbody>`;
+  D.list.forEach((g) => {
+    h += `<tr><td class="l"><b>${esc(g.name)}</b> <span class="tag ${g.type}">${TYPE_LABEL[g.type]}</span></td><td class="l">${[...g.fis].map((i) => esc(D.fmts[i].label)).join(", ")}</td><td class="num">${Math.round(g.total)}</td><td class="num">${ck(g.open)}</td><td class="num">${ck(g.close)}</td><td class="num"><b>${Math.round(g.peak)}</b></td><td class="num">${ck(g.peakT)}</td><td class="num">${Math.round(g.hour)} <small>(${ck(g.hourT)} → ${clock(g.hourT + 3.6e6)})</small></td></tr>`;
+  });
+  $("afTbl").innerHTML = h + "</tbody>";
+  $("afCharts").innerHTML = D.list.map((g, i) => `<section class="afcard"><h3>${esc(g.name)} <small>${TYPE_LABEL[g.type]} · pic ≈ ${Math.round(g.peak)} coureurs vers ${ck(g.peakT)} · ouvert de ${ck(g.open)} à ${ck(g.close)}</small></h3><canvas data-g="${i}" aria-label="Coureurs présents au ravitaillement ${esc(g.name)} selon l'heure"></canvas></section>`).join("");
+  drawAfflAll();
+}
+function drawAfflAll() {
+  if (!AF.data || !AF.data.list.length) return;
+  $("afCharts").querySelectorAll("canvas").forEach((cv) => drawAffl(cv, AF.data.list[+cv.dataset.g]));
+}
+function drawAffl(cv, g) {
+  const D = AF.data, tok = tokens(), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight || 170;
+  if (!W) return;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x.fillStyle = tok.bg; x.fillRect(0, 0, W, H);
+  const L = 44, R = 14, T = 10, B = 22, pw = W - L - R, ph = H - T - B;
+  const X = (t) => L + (t - D.tmin) / (D.tmax - D.tmin) * pw;
+  const raw = Math.max(1, g.peak), mag = Math.pow(10, Math.floor(Math.log10(raw))), stepY = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => raw / s <= 4) || mag * 10;
+  const ymax = Math.ceil(raw / stepY) * stepY, Y = (v) => T + ph - v / ymax * ph;
+  // nuit
+  const nf = D.fmts[[...g.fis][0]].nightFn;
+  x.fillStyle = tok.night;
+  for (let b = 0; b < D.nb; b++) { const t = D.tmin + (b + 0.5) * AF_STEP; if (nf(t)) x.fillRect(X(t - AF_STEP / 2), T, pw / D.nb + 0.5, ph); }
+  // grille
+  x.font = `11px ${tok.font}`; x.strokeStyle = tok.line; x.lineWidth = 1; x.fillStyle = tok.muted;
+  x.textAlign = "right"; x.textBaseline = "middle";
+  for (let v = 0; v <= ymax + 1e-9; v += stepY) { x.beginPath(); x.moveTo(L, Math.round(Y(v)) + .5); x.lineTo(W - R, Math.round(Y(v)) + .5); x.stroke(); x.fillText(Math.round(v), L - 6, Y(v)); }
+  const spanH = (D.tmax - D.tmin) / 3.6e6, minPx = 52;
+  const stepH = [1, 2, 3, 4, 6, 12, 24].find((s) => pw / (spanH / s) >= minPx) || 24;
+  const d0 = new Date(D.tmin); d0.setMinutes(0, 0, 0);
+  x.textAlign = "center"; x.textBaseline = "top";
+  let lastDay = "";
+  for (let t = d0.getTime(); t <= D.tmax; t += 3.6e6) {
+    const d = new Date(t); if (t < D.tmin || d.getHours() % stepH) continue;
+    const day = DAYS[d.getDay()];
+    const lbl = day !== lastDay ? `${day} ${p2(d.getHours())}h` : `${p2(d.getHours())}h`; lastDay = day;
+    x.strokeStyle = tok.line; x.beginPath(); x.moveTo(Math.round(X(t)) + .5, T); x.lineTo(Math.round(X(t)) + .5, T + ph + 3); x.stroke();
+    x.fillStyle = tok.muted; x.fillText(lbl, X(t), T + ph + 5);
+  }
+  // aires empilées par format
+  const cum = new Float64Array(D.nb), bx = (b) => X(D.tmin + (b + 0.5) * AF_STEP);
+  g.ser.forEach((s, fi) => {
+    if (!g.fis.has(fi)) return;
+    const top = cum.map((v, b) => v + s[b]);
+    x.beginPath();
+    x.moveTo(bx(0), Y(top[0]));
+    for (let b = 1; b < D.nb; b++) x.lineTo(bx(b), Y(top[b]));
+    for (let b = D.nb - 1; b >= 0; b--) x.lineTo(bx(b), Y(cum[b]));
+    x.closePath();
+    x.globalAlpha = .55; x.fillStyle = D.fmts[fi].color; x.fill(); x.globalAlpha = 1;
+    x.beginPath(); x.moveTo(bx(0), Y(top[0]));
+    for (let b = 1; b < D.nb; b++) x.lineTo(bx(b), Y(top[b]));
+    x.strokeStyle = D.fmts[fi].color; x.lineWidth = 1.5; x.stroke();
+    cum.set(top);
+  });
+  // lecture au survol
+  const t = AF.hover;
+  if (t != null && t >= D.tmin && t <= D.tmax) {
+    const b = Math.min(D.nb - 1, Math.max(0, Math.floor((t - D.tmin) / AF_STEP)));
+    const px = Math.round(X(t)) + .5;
+    x.strokeStyle = tok.ink; x.lineWidth = 1; x.setLineDash([3, 3]); x.beginPath(); x.moveTo(px, T); x.lineTo(px, T + ph); x.stroke(); x.setLineDash([]);
+    const parts = [...g.fis].filter((fi) => g.ser[fi][b] >= 0.5).map((fi) => `${D.fmts[fi].label} ${Math.round(g.ser[fi][b])}`);
+    const txt = `${clock(t, true)} · ${Math.round(g.sum[b])} coureur${Math.round(g.sum[b]) > 1 ? "s" : ""}` + (g.fis.size > 1 && parts.length ? ` (${parts.join(", ")})` : "");
+    x.font = `600 12px ${tok.font}`;
+    const tw = x.measureText(txt).width + 12, tx = Math.min(W - R - tw, Math.max(L, px + 8));
+    x.fillStyle = tok.bg; x.globalAlpha = .92; x.fillRect(tx, T + 2, tw, 20); x.globalAlpha = 1;
+    x.strokeStyle = tok.line; x.strokeRect(tx + .5, T + 2.5, tw - 1, 19);
+    x.fillStyle = tok.ink; x.textAlign = "left"; x.textBaseline = "middle"; x.fillText(txt, tx + 6, T + 12);
+  }
+}
+$("afCharts").addEventListener("mousemove", (e) => {
+  const cv = e.target.closest("canvas"); if (!cv || !AF.data) return;
+  const r = cv.getBoundingClientRect(), L = 44, pw = r.width - L - 14;
+  const f = (e.clientX - r.left - L) / pw;
+  AF.hover = f < 0 || f > 1 ? null : AF.data.tmin + f * (AF.data.tmax - AF.data.tmin);
+  drawAfflAll();
+});
+$("afCharts").addEventListener("mouseleave", () => { AF.hover = null; drawAfflAll(); });
+document.querySelectorAll(".afctrl input[data-t]").forEach((inp) => inp.addEventListener("change", async () => {
+  EV.affl = EV.affl || {};
+  EV.affl[inp.dataset.t] = inp.value === "" ? "" : Math.max(0, +inp.value || 0);
+  if (!VIEWER) saveWork();
+  AF.data = await buildAffl(); renderAffl();
+}));
+$("afReset").onclick = async () => {
+  delete EV.affl; if (!VIEWER) saveWork();
+  await openAffl();
+};
+$("bAffl").onclick = () => { if (VIEW === "affl") { showView("table"); return; } openAffl(); };
+new ResizeObserver(() => { if (VIEW === "affl") drawAfflAll(); }).observe($("afCharts"));
+new MutationObserver(() => { if (VIEW === "affl") drawAfflAll(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (VIEW === "affl") drawAfflAll(); });
+
 /* ---------- Vues : tableau, flux, réglages, calage ---------- */
-const VIEWS = { table: "vTable", flux: "flux", settings: "vSettings", calib: "vCalib", assist: "vAssist" };
+const VIEWS = { table: "vTable", flux: "flux", affl: "vAffl", settings: "vSettings", calib: "vCalib", assist: "vAssist" };
 let VIEW = "table";
 function showView(v) {
   if (VIEW === "flux" && v !== "flux") { FX.playing = false; cancelAnimationFrame(FX.raf); $("fxPlay").textContent = "Lecture"; }
@@ -1140,6 +1338,8 @@ function showView(v) {
   Object.entries(VIEWS).forEach(([k, id]) => { $(id).hidden = k !== v; });
   $("bFlux").textContent = v === "flux" ? "Retour au tableau" : "Flux de course";
   $("bFlux").classList.toggle("primary", v !== "flux");
+  $("bAffl").textContent = v === "affl" ? "Retour au tableau" : "Affluence ravitaillements";
+  $("bAffl").classList.toggle("primary", v === "affl");
   $("bSet").classList.toggle("primary", v === "settings");
   $("bCal").classList.toggle("primary", v === "calib");
   $("bAssist").classList.toggle("primary", v === "assist");
@@ -1795,7 +1995,7 @@ async function aiAfterBoot() {
     } catch (e) { $("title").textContent = e.message; $("tabs").hidden = true; $("fmtView").hidden = true; return; }
     await showEvent();
     setInterval(async () => {
-      try { if (await viewerLoad(false)) { await showEvent(); if (FX.on) openFlux(true); toast("Mise à jour reçue de l'organisation."); } } catch (e) {}
+      try { if (await viewerLoad(false)) { await showEvent(); if (FX.on) openFlux(true); if (VIEW === "affl") openAffl(); toast("Mise à jour reçue de l'organisation."); } } catch (e) {}
     }, 60000);
     return;
   }
