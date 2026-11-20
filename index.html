@@ -235,6 +235,13 @@ details.arc .count { color: var(--accent) }
 .arc-meta { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere }
 .arc-act { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px }
 .arc-empty { font-size: 12.5px; color: var(--muted) }
+.afctrl input[type=number] { width: 70px }
+.afcharts { display: flex; flex-direction: column; gap: 10px }
+.afcard { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px }
+.afcard h3 { margin: 0; font: 700 16px/1.1 var(--f-display); text-transform: uppercase; letter-spacing: .03em; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline }
+.afcard h3 small { font: 500 12px var(--f-body); text-transform: none; letter-spacing: 0; color: var(--muted) }
+.afcard canvas { width: 100%; height: 170px; display: block; cursor: crosshair }
+.afleg { cursor: default }
 </style>
 
 <header class="top"><div class="wrap">
@@ -242,6 +249,7 @@ details.arc .count { color: var(--accent) }
   <div class="actions">
     <span id="roBadge" class="robadge" hidden>Lecture seule</span>
     <button id="bFlux" class="primary" type="button">Flux de course</button>
+    <button id="bAffl" type="button">Affluence ravitaillements</button>
     <button id="bPdf" type="button">Exporter en PDF</button>
     <button id="bDocx" type="button">Exporter en Word</button>
     <button id="bShare" class="edit-only" type="button">Partager</button>
@@ -376,6 +384,27 @@ details.arc .count { color: var(--accent) }
       <ul class="fxlist" id="fxList"></ul>
     </div>
     <div class="chart"><canvas id="fxBands" aria-label="Position des coureurs par format, en kilomètres"></canvas></div>
+  </div>
+</section>
+<section id="vAffl" class="wrap view" hidden>
+  <div class="vhead">
+    <div><h2 id="afTitle" class="fxtitle">Affluence ravitaillements</h2>
+    <p class="hint">Nombre de coureurs présents en même temps sur chaque ravitaillement, selon le jour et l'heure, tous formats réunis. Le calcul reprend le flux de course : heures de passage de la tête et du dernier, répartition du peloton entre les deux, coureurs au départ de chaque format, et temps passé au ravito selon son type (plus court pour la tête, plus long en fin de peloton). Un ravito qui porte le même nom dans plusieurs formats est additionné. Seuls les points « Ravito liquide », « Ravito complet » et « Base vie » sont comptés ; les abandons ne sont pas retirés.</p></div>
+  </div>
+  <div class="fxctrl afctrl">
+    <span class="fxsel">Temps moyen passé au ravito (min) :</span>
+    <label class="fxsel" for="afS_liquide">Liquide <input id="afS_liquide" data-t="liquide" type="number" min="0" step="0.5"></label>
+    <label class="fxsel" for="afS_complet">Complet <input id="afS_complet" data-t="complet" type="number" min="0" step="0.5"></label>
+    <label class="fxsel" for="afS_base">Base vie <input id="afS_base" data-t="base" type="number" min="0" step="1"></label>
+    <button type="button" class="ghost sm" id="afReset">Valeurs du modèle</button>
+  </div>
+  <p class="msg err" id="afWarn" hidden></p>
+  <div id="afEmpty" class="empty" hidden><b>Aucun ravitaillement à afficher</b><p>Il faut au moins un format avec une trace, un nombre de « Coureurs au départ » et des points de type Ravito liquide, Ravito complet ou Base vie.</p></div>
+  <div id="afBody">
+    <div class="fxfmts" id="afLegend"></div>
+    <div class="tablebox"><table id="afTbl" class="caltbl"></table></div>
+    <p class="hint">Passe la souris sur un graphique pour lire le nombre de coureurs présents à une heure précise. Les zones grisées sont la nuit.</p>
+    <div id="afCharts" class="afcharts"></div>
   </div>
 </section>
 <section id="vSettings" class="wrap view" hidden>
