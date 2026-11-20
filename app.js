@@ -513,7 +513,7 @@ function renderAll() {
   if (!S) return;
   const res = S.res, c = S.course, o = optsOf(F);
   const maxAlt = Math.max(...c.ele), fem = res.femH != null;
-  const noRecal = /maquisard/i.test((EV && EV.name) || "");   // Maquisards : pas de mention « recalé » dans les cadres
+  const noRecal = true;   // plus de mention « recalé … » dans les cadres (tous les événements)
   $("stats").innerHTML = [
     ["Distance", c.total.toFixed(1) + " km"], ["D+ / D-", `${Math.round(c.dplus)} / ${Math.round(c.dminus)}`],
     ["Point haut", Math.round(maxAlt) + " m"], ["Km-effort", Math.round(res.kme)],
