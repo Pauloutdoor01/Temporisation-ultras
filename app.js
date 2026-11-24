@@ -134,7 +134,7 @@ async function openArchive(id, copy) {
   if (!rec) { toast("Cette archive est introuvable."); return; }
   if (EV.archiveId) await archiveCurrent(false);
   EV = clone(rec.ev);
-  if (copy) { EV.archiveId = null; EV.name = (EV.name || "").trim() + " (copie)"; }
+  if (copy) { EV.archiveId = null; EV.name = (EV.name || "").trim() + " (copie)"; delete EV.share; }   // une copie n'hérite pas du lien de partage de l'original
   else EV.archiveId = rec.id;
   EV.cur = Math.min(EV.cur || 0, EV.formats.length - 1);
   await showEvent();
@@ -1801,11 +1801,36 @@ async function sharePayload() {
   delete ev.archiveId; delete ev.share;
   return { v: 1, updated: Date.now(), name: (EV.name || "").trim(), ev, tracks: trk, params: TM.getParams() };
 }
+const newShareId = () => { const a = new Uint8Array(12); crypto.getRandomValues(a); return [...a].map((x) => x.toString(36).padStart(2, "0")).join("").slice(0, 18); };
+// Deux événements (ex. une copie d'archive) peuvent partager le même lien : l'un écrase l'autre en ligne.
+// On garde le lien pour celui qui est actuellement publié, l'autre reçoit un nouveau lien.
+async function fixShareDup() {
+  if (VIEWER || !EV || !EV.share || !EV.share.id || !GH.cfg || !GH.token) return false;
+  const id = EV.share.id, all = await arcAll();
+  const other = all.find((r) => r && r.id !== EV.archiveId && r.ev && r.ev.share && r.ev.share.id === id);
+  if (!other) return false;
+  const { owner, repo, branch } = GH.cfg;
+  let pubName = null;
+  try {
+    const cur = await gh("GET", `/repos/${owner}/${repo}/contents/s/${id}.json?ref=${branch}`, null, "application/vnd.github.raw+json");
+    if (cur) pubName = (cur.name || "").trim();
+  } catch (e) { return false; }
+  const mine = (EV.name || "").trim();
+  if (pubName !== null && pubName === mine) return false;   // c'est bien cet événement qui est en ligne : il garde le lien
+  if (pubName === null && mine.localeCompare((other.ev.name || "").trim()) <= 0) return false;
+  EV.share = { id: newShareId(), auto: EV.share.auto !== false, last: null };
+  await storeOp("w", "readwrite", (st) => st.put(clone(EV), "current"));
+  if (EV.archiveId) await archiveCurrent(false);
+  toast(`« ${mine || "Cet événement"} » avait le même lien que « ${(other.ev.name || "").trim() || "un autre événement"} ». Il a maintenant son propre lien : renvoie-le à tes prestataires.`);
+  return true;
+}
 async function sharePush(quiet) {
   if (!EV.share || !EV.share.id || GH.busy) return;
   if (!(await ghLoad()) || !GH.token) { if (!quiet) toast("Configure d'abord l'espace de partage GitHub."); return; }
   GH.busy = true; $("shState").textContent = "Publication en cours…";
   try {
+    const moved = await fixShareDup();
+    if (moved) { renderShare(); $("shState").textContent = "Publication en cours…"; }
     // l'appli a évolué (assistant) : la page de consultation suit
     if (window.tempo.appSig) {
       const as = await window.tempo.appSig();
@@ -1822,7 +1847,7 @@ async function sharePush(quiet) {
     EV.share.sig = sig;
     await ghPut(`s/${EV.share.id}.json`, utf8(JSON.stringify(p)), `Temporisation : ${p.name || "événement"} (${new Date().toLocaleString("fr-FR")})`);
     EV.share.last = p.updated; EV.share.err = "";
-    if (!quiet) toast("Publié : la page de ton prestataire sera à jour d'ici 1 à 2 minutes.");
+    if (!quiet && !moved) toast("Publié : la page de ton prestataire sera à jour d'ici 1 à 2 minutes.");
   } catch (e) { EV.share.err = e.message; if (!quiet) toast("Publication impossible : " + e.message); }
   GH.busy = false;
   await storeOp("w", "readwrite", (st) => st.put(clone(EV), "current"));
@@ -1853,6 +1878,7 @@ $("bShare").onclick = async () => {
   $("shToken").placeholder = GH.token ? "jeton enregistré (laisser vide pour le garder)" : "github_pat_…";
   $("shCfgBox").open = !(GH.cfg && GH.token); $("shCfgMsg").hidden = true;
   renderShare(); $("shareDlg").hidden = false;
+  if (!GH.busy && await fixShareDup().catch(() => false)) { renderShare(); sharePush(true); }
 };
 $("shClose").onclick = () => { $("shareDlg").hidden = true; };
 $("shareDlg").addEventListener("click", (e) => { if (e.target === $("shareDlg")) $("shareDlg").hidden = true; });
